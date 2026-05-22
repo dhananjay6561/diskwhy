@@ -51,3 +51,6 @@ func isBlocklistedHome(path, home string) bool {
 	}
 	return false
 }
+
+// IsBlocklistedHome is the exported variant used by the clean package.
+func IsBlocklistedHome(path, home string) bool { return isBlocklistedHome(path, home) }
