@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>diskwhy — your disk is full. but why?</title>
 <meta name="description" content="diskwhy finds what's consuming your disk — node_modules, Docker images, Python caches, Xcode junk — and removes them safely.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <style>
 /* ── hero ── */
@@ -611,12 +608,29 @@
 
 <script>
 function copyCmd(btn, text) {
-  navigator.clipboard.writeText(text).then(() => {
-    const prev = btn.innerHTML;
+  var prev = btn.innerHTML;
+  var show = function() {
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg> copied';
     btn.style.color = 'var(--green)';
-    setTimeout(() => { btn.innerHTML = prev; btn.style.color = ''; }, 2000);
-  });
+    setTimeout(function() { btn.innerHTML = prev; btn.style.color = ''; }, 2000);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(show).catch(function() {
+      fallbackCopy(text); show();
+    });
+  } else {
+    fallbackCopy(text); show();
+  }
+}
+function fallbackCopy(text) {
+  var el = document.createElement('textarea');
+  el.value = text;
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  el.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(el);
 }
 </script>
 
