@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhananjay6561/diskwhy/internal/clean"
 	"github.com/dhananjay6561/diskwhy/internal/docker"
+	"github.com/dhananjay6561/diskwhy/internal/jsonout"
 	"github.com/dhananjay6561/diskwhy/internal/scan"
 	"github.com/dhananjay6561/diskwhy/internal/tui"
 	"github.com/spf13/cobra"
@@ -44,7 +45,6 @@ func init() {
 	cleanCmd.Flags().Bool("dry-run", false, "Show what would be cleaned without making any changes")
 	cleanCmd.Flags().BoolP("yes", "y", false, "Skip interactive confirmation prompt")
 	cleanCmd.Flags().Bool("no-trash", false, "Permanently delete instead of moving to trash")
-	cleanCmd.Flags().Bool("json", false, "Output results as JSON (schema_version: 1)")
 }
 
 func runClean(cmd *cobra.Command, args []string) error {
@@ -66,12 +66,14 @@ func runClean(cmd *cobra.Command, args []string) error {
 	staleDays := 90
 	workers := 4
 	gitTimeoutSecs := 30
+	jsonOutput := false
 	if GlobalConfig != nil {
 		noColor = GlobalConfig.NoColor
 		verbose = GlobalConfig.Verbose
 		staleDays = GlobalConfig.StaleDays
 		workers = GlobalConfig.Workers
 		gitTimeoutSecs = GlobalConfig.GitTimeoutSecs
+		jsonOutput = GlobalConfig.JSON
 		if GlobalConfig.Trash {
 			flagTrash = true
 		}
@@ -79,6 +81,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
 	caps := tui.Detect(noColor || noColorFlag)
+	if jsonOutput {
+		flagYes = true // non-interactive when emitting JSON
+	}
 
 	useTrash := flagTrash && !flagNoTrash
 
@@ -99,7 +104,11 @@ func runClean(cmd *cobra.Command, args []string) error {
 	// Re-scan to get fresh candidates.
 	var scanItems []scan.CandidateItem
 	if needFileScan {
-		stopSpinner := tui.StartSpinner("Scanning", caps)
+		spinnerCaps := caps
+		if jsonOutput {
+			spinnerCaps.IsTTY = false
+		}
+		stopSpinner := tui.StartSpinner("Scanning", spinnerCaps)
 		scanCfg := scan.Config{
 			Root:      "",
 			Deep:      true,
@@ -137,56 +146,66 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(toClean) == 0 && dockerFreeable == 0 {
+		if jsonOutput {
+			return jsonout.WriteClean(os.Stdout, nil, 0, flagDryRun, useTrash)
+		}
 		fmt.Fprintln(os.Stdout, "  Nothing to clean.")
 		return nil
 	}
 
-	// Show preview.
-	printCleanPreview(toClean, dockerFreeable, caps, flagDryRun)
+	if !jsonOutput {
+		// Show preview and confirm only for interactive (non-JSON) output.
+		printCleanPreview(toClean, dockerFreeable, caps, flagDryRun)
 
-	if flagDryRun {
-		return nil
-	}
-
-	// Confirmation.
-	if !flagYes {
-		if !confirm(flagAll) {
-			fmt.Fprintln(os.Stdout, "  Aborted.")
+		if flagDryRun {
 			return nil
+		}
+
+		if !flagYes {
+			if !confirm(flagAll) {
+				fmt.Fprintln(os.Stdout, "  Aborted.")
+				return nil
+			}
 		}
 	}
 
 	// Clean file-system items.
-	var totalFreed int64
-	var errCount int
-
+	var cleanResults []clean.ItemResult
 	if len(toClean) > 0 {
 		cleanCfg := clean.Config{
 			Categories:     categories,
-			DryRun:         false,
+			DryRun:         flagDryRun,
 			UseTrash:       useTrash,
 			GitTimeoutSecs: gitTimeoutSecs,
 			Home:           home,
 		}
-		results := clean.Run(ctx, cleanCfg, toClean)
-		totalFreed, errCount = printCleanResults(results, caps)
+		cleanResults = clean.Run(ctx, cleanCfg, toClean)
 	}
 
 	// Docker prune.
-	if needDocker && dockerFreeable > 0 {
-		fmt.Fprintf(os.Stdout, "  Pruning Docker images and volumes...\n")
-		freed, err := docker.PruneUnused(ctx, home, false, verbose)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  docker prune failed: %s\n", err)
-			errCount++
-		} else {
-			totalFreed += freed
-			gb := float64(freed) / (1 << 30)
-			fmt.Fprintf(os.Stdout, "  Docker: freed %.1f GB\n", gb)
+	var dockerFreed int64
+	if needDocker && dockerFreeable > 0 && !flagDryRun {
+		var dockerErr error
+		dockerFreed, dockerErr = docker.PruneUnused(ctx, home, false, verbose)
+		if !jsonOutput {
+			if dockerErr != nil {
+				fmt.Fprintf(os.Stderr, "  docker prune failed: %s\n", dockerErr)
+			} else {
+				gb := float64(dockerFreed) / (1 << 30)
+				fmt.Fprintf(os.Stdout, "  Docker: freed %.1f GB\n", gb)
+			}
 		}
+	} else if flagDryRun && needDocker {
+		dockerFreed = dockerFreeable
 	}
 
-	// Summary.
+	if jsonOutput {
+		return jsonout.WriteClean(os.Stdout, cleanResults, dockerFreed, flagDryRun, useTrash)
+	}
+
+	totalFreed, errCount := printCleanResults(cleanResults, caps)
+	totalFreed += dockerFreed
+
 	fmt.Fprintln(os.Stdout)
 	if errCount > 0 {
 		fmt.Fprintf(os.Stdout, "  Done with %d error(s). Run with --verbose for details.\n", errCount)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dhananjay6561/diskwhy/internal/docker"
+	"github.com/dhananjay6561/diskwhy/internal/jsonout"
 	"github.com/dhananjay6561/diskwhy/internal/scan"
 	"github.com/dhananjay6561/diskwhy/internal/tui"
 	"github.com/spf13/cobra"
@@ -33,7 +34,6 @@ Examples:
 func init() {
 	scanCmd.Flags().Bool("deep", false, "Full recursive scan (~10-15 seconds on large disks)")
 	scanCmd.Flags().StringP("path", "p", "", "Scan a specific path instead of the full disk")
-	scanCmd.Flags().Bool("json", false, "Output results as JSON (schema_version: 1)")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -47,16 +47,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 	noColor := false
 	verbose := false
 	skipDocker := false
+	jsonOutput := false
 	if GlobalConfig != nil {
 		workers = GlobalConfig.Workers
 		staleDays = GlobalConfig.StaleDays
 		noColor = GlobalConfig.NoColor
 		verbose = GlobalConfig.Verbose
 		skipDocker = GlobalConfig.SkipDocker
+		jsonOutput = GlobalConfig.JSON
 	}
 
 	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
-	caps := tui.Detect(noColor || noColorFlag)
+	caps := tui.Detect((noColor || noColorFlag) && !jsonOutput)
 
 	// Lower process priority so the scan does not affect the user's session.
 	_ = syscall.Setpriority(syscall.PRIO_PROCESS, 0, 10)
@@ -72,7 +74,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if deep {
 		label = "Scanning (deep mode — this may take ~15s)"
 	}
-	stopSpinner := tui.StartSpinner(label, caps)
+	spinnerCaps := caps
+	if jsonOutput {
+		spinnerCaps.IsTTY = false // suppress spinner when emitting JSON
+	}
+	stopSpinner := tui.StartSpinner(label, spinnerCaps)
 
 	start := time.Now()
 	result, err := scan.Scan(ctx, cfg)
@@ -96,6 +102,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	var dockerResult *docker.Result
 	if !skipDocker {
 		dockerResult, _ = docker.Query(ctx, home, verbose)
+	}
+
+	if jsonOutput {
+		disk := jsonout.DiskInfo{TotalBytes: total, UsedBytes: used, FreeBytes: free}
+		return jsonout.WriteScan(os.Stdout, result, dockerResult, disk, elapsed.Milliseconds())
 	}
 
 	printScanResult(result, dockerResult, elapsed, total, used, free, caps, verbose)
