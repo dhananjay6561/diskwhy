@@ -89,6 +89,10 @@ func buildRootCmd(ver, buildCommit string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       fmt.Sprintf("%s (build %s)", ver, buildCommit),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default UX: open interactive shell when no subcommand is provided.
+			return runShell(cmd, args)
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return initConfig(cmd)
 		},
@@ -103,6 +107,7 @@ func buildRootCmd(ver, buildCommit string) *cobra.Command {
 
 	root.AddCommand(scanCmd)
 	root.AddCommand(cleanCmd)
+	root.AddCommand(shellCmd)
 
 	return root
 }
