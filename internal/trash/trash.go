@@ -25,18 +25,17 @@ func Available() bool {
 
 // uniqueDest returns a collision-free destination path. If dest already exists
 // it appends an incrementing counter before the extension until it finds a free
-// slot, falling back to a PID suffix after 1000 attempts.
+// slot.
 func uniqueDest(dest string) string {
 	if _, err := os.Lstat(dest); os.IsNotExist(err) {
 		return dest
 	}
 	ext := filepath.Ext(dest)
 	base := dest[:len(dest)-len(ext)]
-	for i := 1; i <= 1000; i++ {
+	for i := 1; ; i++ {
 		candidate := fmt.Sprintf("%s %d%s", base, i, ext)
 		if _, err := os.Lstat(candidate); os.IsNotExist(err) {
 			return candidate
 		}
 	}
-	return fmt.Sprintf("%s.%d%s", base, os.Getpid(), ext)
 }
