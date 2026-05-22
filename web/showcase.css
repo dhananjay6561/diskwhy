@@ -1,0 +1,256 @@
+/* ── page header ── */
+.page-hero {
+  padding: 120px 0 64px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-hero-inner {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.page-hero h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -.04em;
+  color: #fff;
+  line-height: 1.1;
+  margin-bottom: 12px;
+}
+
+.page-hero p {
+  font-size: .9375rem;
+  color: var(--text2);
+  max-width: 440px;
+  line-height: 1.6;
+}
+
+/* ── demo sections ── */
+.demo {
+  padding: 80px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.demo-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.demo-num {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.demo-title {
+  font-size: clamp(1.25rem, 2.5vw, 1.625rem);
+  font-weight: 600;
+  letter-spacing: -.03em;
+  color: #fff;
+}
+
+.demo-desc {
+  font-size: .9375rem;
+  color: var(--text2);
+  line-height: 1.65;
+  max-width: 600px;
+  margin-bottom: 28px;
+}
+.demo-desc code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: .85em;
+  color: var(--text);
+}
+
+/* ── two-up terminal layout ── */
+.demo-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.col-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text2);
+  margin-bottom: 8px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* ── json block ── */
+.json-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.json-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.json-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.json-dots { display: flex; gap: 6px; }
+.jd { width: 11px; height: 11px; border-radius: 50%; }
+.jd-r { background: #ff5f57; }
+.jd-y { background: #febc2e; }
+.jd-g { background: #28c840; }
+
+.json-filename {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text2);
+}
+
+.json-schema-badge {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid var(--green-ring);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.json-pre {
+  padding: 22px 24px;
+  font-family: var(--mono);
+  font-size: 0.775rem;
+  line-height: 1.9;
+  color: #aaa;
+  overflow-x: auto;
+}
+
+/* json syntax tokens */
+.jk { color: #93c5fd; }
+.jv { color: #86efac; }
+.jn { color: var(--orange); }
+.jb { color: var(--text2); }
+.jp { color: var(--text2); }
+
+/* ── flag table ── */
+.flag-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 28px;
+  font-size: 0.84375rem;
+}
+
+.flag-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--text2);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 0 16px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.flag-table td {
+  padding: 12px 16px 12px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+  vertical-align: top;
+}
+
+.flag-table tr:last-child td { border-bottom: none; }
+
+.flag-table td:first-child {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--green);
+  white-space: nowrap;
+}
+
+.flag-table td:nth-child(2) {
+  color: var(--text);
+  font-size: 0.84375rem;
+}
+
+/* ── outcome legend ── */
+.outcome-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.outcome-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 7px 12px;
+  font-size: 0.8125rem;
+}
+
+.outcome-pill code {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+/* ── completion section ── */
+.completion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.completion-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.completion-label {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text2);
+  background: var(--surface2);
+}
+
+.completion-block pre {
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 0.775rem;
+  color: var(--text2);
+  overflow-x: auto;
+}
+
+.completion-block pre .cmd { color: var(--green); }
+
+/* ── responsive ── */
+@media (max-width: 860px) {
+  .demo-two-col { grid-template-columns: 1fr; }
+  .completion-grid { grid-template-columns: 1fr; }
+}
