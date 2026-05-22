@@ -10,6 +10,7 @@ import (
 
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 )
@@ -113,4 +114,51 @@ func Query(ctx context.Context, home string, verbose bool) (*Result, error) {
 	}
 
 	return res, nil
+}
+
+// PruneUnused removes all Docker images not referenced by any container and
+// prunes all unused volumes. Returns total bytes freed.
+// When dryRun is true no changes are made; the return value reflects what
+// would be freed based on a fresh Query.
+func PruneUnused(ctx context.Context, home string, dryRun bool, verbose bool) (int64, error) {
+	socketPath, err := discoverDockerSocket(home)
+	if err != nil {
+		return 0, fmt.Errorf("docker not available: %w", err)
+	}
+
+	cli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost("unix://"+socketPath),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("connect to Docker: %w\nFix: ensure Docker is running", err)
+	}
+	defer cli.Close()
+
+	if dryRun {
+		q, _ := Query(ctx, home, verbose)
+		return q.UnusedImageBytes + q.VolumeBytes, nil
+	}
+
+	// Prune images not used by any container (dangling=false includes tagged unused).
+	pruneFilters := filters.NewArgs(filters.Arg("dangling", "false"))
+	imgReport, err := cli.ImagesPrune(ctx, pruneFilters)
+	if err != nil {
+		return 0, fmt.Errorf("prune Docker images: %w\nFix: ensure Docker daemon is running and you have permission", err)
+	}
+	freed := int64(imgReport.SpaceReclaimed)
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "  docker: pruned %d image(s)\n", len(imgReport.ImagesDeleted))
+	}
+
+	volReport, err := cli.VolumesPrune(ctx, filters.Args{})
+	if err == nil {
+		freed += int64(volReport.SpaceReclaimed)
+		if verbose {
+			fmt.Fprintf(os.Stderr, "  docker: pruned %d volume(s)\n", len(volReport.VolumesDeleted))
+		}
+	}
+
+	return freed, nil
 }
