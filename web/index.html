@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>diskwhy — your disk is full. but why?</title>
+<meta name="description" content="diskwhy finds what's consuming your disk — node_modules, Docker images, Python caches, Xcode junk — and removes them safely.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+/* ── hero ── */
+.hero {
+  padding: 148px 0 96px;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: var(--green-dim);
+  border: 1px solid var(--green-ring);
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  color: var(--green);
+  margin-bottom: 22px;
+}
+.hero-pill::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hero h1 {
+  font-size: clamp(2.25rem, 4.5vw, 3.75rem);
+  font-weight: 600;
+  letter-spacing: -.045em;
+  line-height: 1.08;
+  color: #fff;
+  margin-bottom: 20px;
+}
+.hero h1 em {
+  font-style: normal;
+  color: var(--green);
+}
+
+.hero-desc {
+  font-size: 1.0625rem;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 32px;
+  max-width: 420px;
+}
+
+.hero-install {
+  margin-bottom: 22px;
+}
+
+.hero-btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── how-it-works ── */
+.how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 52px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.how-step {
+  background: var(--surface);
+  padding: 30px 28px;
+}
+.how-step + .how-step {
+  border-left: 1px solid var(--border);
+}
+
+.step-n {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  letter-spacing: .08em;
+  display: block;
+  margin-bottom: 14px;
+}
+
+.step-h {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -.02em;
+  margin-bottom: 10px;
+}
+
+.step-cmd {
+  display: inline-block;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--green);
+  margin-bottom: 12px;
+}
+
+.step-p {
+  font-size: 0.84375rem;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.step-p code {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: .85em;
+  color: var(--text);
+}
+
+/* ── categories ── */
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 44px;
+}
+
+.cat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  transition: border-color .12s;
+}
+.cat-card:hover { border-color: var(--border2); }
+
+.cat-name {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--green);
+  margin-bottom: 4px;
+}
+
+.cat-desc {
+  font-size: 0.8125rem;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+/* ── features ── */
+.feat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  margin-top: 52px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.feat-card {
+  background: var(--surface);
+  padding: 30px 28px;
+  transition: background .12s;
+}
+.feat-card:hover { background: var(--surface2); }
+
+.feat-icon {
+  width: 34px; height: 34px;
+  background: var(--green-dim);
+  border: 1px solid var(--green-ring);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  color: var(--green);
+}
+.feat-icon svg { width: 16px; height: 16px; }
+
+.feat-h {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -.02em;
+  margin-bottom: 8px;
+}
+
+.feat-p {
+  font-size: 0.84375rem;
+  color: var(--text2);
+  line-height: 1.65;
+}
+.feat-p code {
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: .85em;
+  color: var(--green);
+}
+
+/* ── staleness legend ── */
+.staleness-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 40px;
+}
+
+.stale-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 9px 14px;
+  font-size: 0.84375rem;
+}
+
+.stale-badge .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stale-badge .badge-name {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+  margin-right: 4px;
+}
+
+.stale-badge .badge-desc {
+  color: var(--text2);
+  font-size: 0.8125rem;
+}
+
+/* ── cta ── */
+.cta-section {
+  padding: 72px 0;
+  border-top: 1px solid var(--border);
+}
+
+.cta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+.cta-row h2 {
+  font-size: 1.625rem;
+  font-weight: 600;
+  letter-spacing: -.035em;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.cta-row p {
+  font-size: 0.9rem;
+  color: var(--text2);
+}
+
+.cta-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── responsive ── */
+@media (max-width: 920px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .how-grid  { grid-template-columns: 1fr; }
+  .how-step + .how-step { border-left: none; border-top: 1px solid var(--border); }
+  .cat-grid  { grid-template-columns: repeat(2, 1fr); }
+  .feat-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .hero { padding: 100px 0 64px; }
+  .cat-grid { grid-template-columns: 1fr 1fr; }
+  .cta-row { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo">disk<em>why</em></a>
+    <ul class="nav-links">
+      <li><a href="#what-it-finds">categories</a></li>
+      <li><a href="#features">features</a></li>
+      <li><a href="showcase.html">showcase</a></li>
+    </ul>
+    <a href="https://github.com/dhananjay6561/diskwhy" class="nav-gh" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-grid">
+
+      <div>
+        <div class="hero-pill">go CLI &nbsp;·&nbsp; macOS &amp; Linux &nbsp;·&nbsp; MIT</div>
+
+        <h1>Your disk is full.<br><em>But why?</em></h1>
+
+        <p class="hero-desc">diskwhy scans your drive and finds what's actually using space — not just "big file on Desktop", but node_modules, Docker images, Xcode caches, stale Python bytecode. Then removes them safely.</p>
+
+        <div class="hero-install">
+          <div class="install-strip">
+            <code><span class="dollar">$</span> go install github.com/dhananjay6561/diskwhy@latest</code>
+            <button class="copy-btn" onclick="copyCmd(this, 'go install github.com/dhananjay6561/diskwhy@latest')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              copy
+            </button>
+          </div>
+        </div>
+
+        <div class="hero-btns">
+          <a href="https://github.com/dhananjay6561/diskwhy" class="btn btn-green" target="_blank" rel="noopener">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            View on GitHub
+          </a>
+          <a href="showcase.html" class="btn btn-outline">
+            See it in action
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- hero terminal -->
+      <div>
+        <div class="terminal">
+          <div class="term-bar">
+            <div class="term-dots">
+              <div class="td td-r"></div>
+              <div class="td td-y"></div>
+              <div class="td td-g"></div>
+            </div>
+            <div class="term-label">zsh — diskwhy scan</div>
+          </div>
+          <div class="term-body"><span class="tp">~</span> <span class="tc">diskwhy scan</span>
+
+<span class="tsi">  Scanning /Users/dj (quick) ...</span>
+
+<span class="th">  FOUND 4.2 GB across 8 items</span>
+<span class="ts">  ────────────────────────────────────────────────</span>
+<span class="tsi">  1  </span><span class="tcat">node_modules  </span><span class="tsi">~/old-app/node_modules     </span><span class="tsz">1.8 GB  </span><span class="tu">unused</span>
+<span class="tsi">  2  </span><span class="tcat">docker        </span><span class="tsi">3 images · 2 volumes       </span><span class="tsz">923 MB  </span><span class="tz">—</span>
+<span class="tsi">  3  </span><span class="tcat">xcode_derived </span><span class="tsi">~/Library/Developer/Xcode  </span><span class="tsz">631 MB  </span><span class="tst">stale</span>
+<span class="tsi">  4  </span><span class="tcat">node_modules  </span><span class="tsi">~/blog/node_modules        </span><span class="tsz">412 MB  </span><span class="tr">recent</span>
+<span class="tsi">  5  </span><span class="tcat">pycache       </span><span class="tsi">~/scripts/__pycache__      </span><span class="tsz">248 MB  </span><span class="tst">stale</span>
+<span class="tsi">  6  </span><span class="tcat">brew_cache    </span><span class="tsi">~/Library/Caches/Homebrew  </span><span class="tsz">178 MB  </span><span class="tu">unused</span>
+<span class="tsi">  7  </span><span class="tcat">git_objects   </span><span class="tsi">~/monorepo/.git            </span><span class="tsz"> 94 MB  </span><span class="tst">stale</span>
+<span class="tsi">  8  </span><span class="tcat">logs          </span><span class="tsi">~/Library/Logs             </span><span class="tsz"> 81 MB  </span><span class="tst">stale</span>
+<span class="ts">  ────────────────────────────────────────────────</span>
+
+<span class="tsi">  Run: </span><span class="tc">diskwhy clean --all --dry-run</span>
+
+<span class="tp">~</span> <span class="cursor">▋</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section section-border">
+  <div class="container">
+    <span class="label">how it works</span>
+    <h2 class="h2">Three commands.</h2>
+    <p class="sub">No config required. Scan to see what's there. Review with <code style="font-family:var(--mono);font-size:.85em;color:var(--text)">--dry-run</code>. Remove what you approved.</p>
+
+    <div class="how-grid">
+      <div class="how-step">
+        <span class="step-n">01</span>
+        <div class="step-h">Scan</div>
+        <div class="step-cmd">diskwhy scan</div>
+        <p class="step-p">Walks your home directory and catalogs space hogs by category. Add <code>--deep</code> to include system dirs like /usr/local and Homebrew. Add <code>--path /dir</code> to target a specific directory.</p>
+      </div>
+      <div class="how-step">
+        <span class="step-n">02</span>
+        <div class="step-h">Review</div>
+        <div class="step-cmd">diskwhy clean --all --dry-run</div>
+        <p class="step-p">Preview exactly what would be deleted — size, category, and staleness for each item. Items modified in the last 7 days are marked <code>active</code> and always skipped.</p>
+      </div>
+      <div class="how-step">
+        <span class="step-n">03</span>
+        <div class="step-h">Clean</div>
+        <div class="step-cmd">diskwhy clean --all --yes</div>
+        <p class="step-p">Remove what you approved. Pass <code>--trash</code> to move to Trash instead of permanent delete. Git repos run <code>git gc</code> — the repo stays intact, loose objects are pruned.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CATEGORIES -->
+<section class="section section-border" id="what-it-finds">
+  <div class="container">
+    <span class="label">categories</span>
+    <h2 class="h2">Knows what to look for.</h2>
+    <p class="sub">Most disk scanners show you file sizes. diskwhy knows what node_modules is, what Xcode DerivedData is, and why your ~/.npm cache is 4 GB after six months of inactivity.</p>
+
+    <div class="cat-grid">
+      <div class="cat-card">
+        <div class="cat-name">node_modules</div>
+        <div class="cat-desc">npm, yarn, pnpm dependency trees</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">git_objects</div>
+        <div class="cat-desc">Loose objects and pack files in .git — runs git gc, not raw delete</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">docker</div>
+        <div class="cat-desc">Dangling images and unused volumes via Docker API</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">pycache</div>
+        <div class="cat-desc">Python __pycache__ directories and .pyc bytecode files</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">pip_cache</div>
+        <div class="cat-desc">pip download and wheel cache (~/.cache/pip)</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">npm_cache</div>
+        <div class="cat-desc">npm global cache in ~/.npm</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">brew_cache</div>
+        <div class="cat-desc">Homebrew downloads cache (macOS)</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">xcode_derived</div>
+        <div class="cat-desc">Xcode DerivedData and build artifacts (macOS)</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">apt_cache</div>
+        <div class="cat-desc">apt package cache in /var/cache/apt (Linux)</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">snap_cache</div>
+        <div class="cat-desc">Snap package cache (Linux)</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">logs</div>
+        <div class="cat-desc">Log files matching *.log and *.log.* patterns</div>
+      </div>
+      <div class="cat-card">
+        <div class="cat-name">trash</div>
+        <div class="cat-desc">Items in system Trash / ~/.Trash</div>
+      </div>
+    </div>
+
+    <!-- staleness -->
+    <div style="margin-top: 56px;">
+      <span class="label">staleness scores</span>
+      <p class="sub" style="margin-top:8px; margin-bottom:0">Every item gets a staleness score from access time, mtime, or sentinel files (package.json, go.mod, Cargo.toml). Scores are frozen at scan time — the clean phase never re-derives them.</p>
+      <div class="staleness-row">
+        <div class="stale-badge">
+          <span class="dot" style="background:var(--green)"></span>
+          <span class="badge-name">active</span>
+          <span class="badge-desc">modified &lt; 7 days ago — never deleted</span>
+        </div>
+        <div class="stale-badge">
+          <span class="dot" style="background:#6ee7b7"></span>
+          <span class="badge-name">recent</span>
+          <span class="badge-desc">accessed &lt; 30 days ago</span>
+        </div>
+        <div class="stale-badge">
+          <span class="dot" style="background:var(--orange)"></span>
+          <span class="badge-name">stale</span>
+          <span class="badge-desc">not accessed in 30–90 days</span>
+        </div>
+        <div class="stale-badge">
+          <span class="dot" style="background:var(--red)"></span>
+          <span class="badge-name">unused</span>
+          <span class="badge-desc">not accessed in &gt; 90 days</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section section-border" id="features">
+  <div class="container">
+    <span class="label">features</span>
+    <h2 class="h2">Built the right way.</h2>
+    <p class="sub">No shell-outs. No brittle heuristics. No silent data loss. Engineered to run safely on real developer machines.</p>
+
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div class="feat-h">Active items are never deleted</div>
+        <p class="feat-p">Items modified in the last 7 days are marked <code>active</code> and unconditionally skipped by the clean phase. Cache categories (pycache, brew, npm, pip, etc.) are always safe regardless of staleness — they regenerate on demand.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        </div>
+        <div class="feat-h">Staleness frozen at scan time</div>
+        <p class="feat-p">Access time, mtime, and sentinel files (<code>package.json</code>, <code>go.mod</code>, <code>Cargo.toml</code>) are evaluated once during the scan. The clean command never re-reads them — what you saw in the preview is exactly what gets acted on.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        </div>
+        <div class="feat-h">Docker API, not exec.Command</div>
+        <p class="feat-p">Docker integration uses the <code>github.com/docker/docker</code> SDK directly — no <code>exec.Command("docker", "images")</code>. Queries containers, images, and volumes from the daemon socket. Silently skips if Docker is unavailable.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </div>
+        <div class="feat-h">JSON output, schema versioned</div>
+        <p class="feat-p">Every command supports <code>--json</code> with a stable <code>schema_version: 1</code> contract. Pipe to jq, wire into dashboards, or integrate with your own tooling. See the <a href="https://github.com/dhananjay6561/diskwhy/blob/main/SCHEMA_CHANGELOG.md" style="color:var(--green);text-decoration:underline;text-decoration-color:var(--green-ring)" target="_blank" rel="noopener">schema changelog</a>.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        </div>
+        <div class="feat-h">Git repos run gc, not delete</div>
+        <p class="feat-p">The <code>git_objects</code> category runs <code>git gc --prune=now</code> instead of nuking .git. Loose objects are pruned and pack files are consolidated. The repo stays intact. The disk space comes back.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <div class="feat-h">Interactive shell built in</div>
+        <p class="feat-p">Run <code>diskwhy</code> with no arguments to open a REPL. Type <code>/scan</code>, <code>/clean --all --dry-run</code>, <code>/help</code>. Adaptive to dark and light terminals. No readline dependency.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="container">
+    <div class="cta-row">
+      <div>
+        <h2>Start in 30 seconds.</h2>
+        <p>Requires Go 1.21+. Works on macOS and Linux.</p>
+      </div>
+      <div class="cta-right">
+        <div class="install-strip" style="min-width: 340px;">
+          <code><span class="dollar">$</span> go install github.com/dhananjay6561/diskwhy@latest</code>
+          <button class="copy-btn" onclick="copyCmd(this, 'go install github.com/dhananjay6561/diskwhy@latest')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            copy
+          </button>
+        </div>
+        <a href="showcase.html" class="btn btn-outline">
+          See examples
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-row">
+      <div class="footer-brand"><span>disk</span>why</div>
+      <ul class="footer-links">
+        <li><a href="index.html">home</a></li>
+        <li><a href="showcase.html">showcase</a></li>
+        <li><a href="https://github.com/dhananjay6561/diskwhy" target="_blank" rel="noopener">github</a></li>
+        <li><a href="https://github.com/dhananjay6561/diskwhy/blob/main/README.md" target="_blank" rel="noopener">readme</a></li>
+        <li><a href="https://github.com/dhananjay6561/diskwhy/blob/main/SCHEMA_CHANGELOG.md" target="_blank" rel="noopener">schema</a></li>
+      </ul>
+      <div class="footer-note">MIT License</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+function copyCmd(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const prev = btn.innerHTML;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="20 6 9 17 4 12"/></svg> copied';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.innerHTML = prev; btn.style.color = ''; }, 2000);
+  });
+}
+</script>
+
+</body>
+</html>

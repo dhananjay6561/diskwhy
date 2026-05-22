@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>diskwhy — showcase</title>
+<meta name="description" content="See diskwhy in action: scan output, clean with dry-run, interactive shell, and JSON output.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+/* ── page header ── */
+.page-hero {
+  padding: 120px 0 64px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-hero-inner {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.page-hero h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -.04em;
+  color: #fff;
+  line-height: 1.1;
+  margin-bottom: 12px;
+}
+
+.page-hero p {
+  font-size: .9375rem;
+  color: var(--text2);
+  max-width: 440px;
+  line-height: 1.6;
+}
+
+/* ── demo sections ── */
+.demo {
+  padding: 80px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.demo-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.demo-num {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.demo-title {
+  font-size: clamp(1.25rem, 2.5vw, 1.625rem);
+  font-weight: 600;
+  letter-spacing: -.03em;
+  color: #fff;
+}
+
+.demo-desc {
+  font-size: .9375rem;
+  color: var(--text2);
+  line-height: 1.65;
+  max-width: 600px;
+  margin-bottom: 28px;
+}
+.demo-desc code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: .85em;
+  color: var(--text);
+}
+
+/* ── two-up terminal layout ── */
+.demo-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.col-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text2);
+  margin-bottom: 8px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* ── json block ── */
+.json-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.json-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.json-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.json-dots { display: flex; gap: 6px; }
+.jd { width: 11px; height: 11px; border-radius: 50%; }
+.jd-r { background: #ff5f57; }
+.jd-y { background: #febc2e; }
+.jd-g { background: #28c840; }
+
+.json-filename {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text2);
+}
+
+.json-schema-badge {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid var(--green-ring);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.json-pre {
+  padding: 22px 24px;
+  font-family: var(--mono);
+  font-size: 0.775rem;
+  line-height: 1.9;
+  color: #aaa;
+  overflow-x: auto;
+}
+
+/* json syntax tokens */
+.jk { color: #93c5fd; }  /* key */
+.jv { color: #86efac; }  /* string value */
+.jn { color: var(--orange); }  /* number */
+.jb { color: var(--text2); }  /* bool/null */
+.jp { color: var(--text2); }  /* punctuation */
+
+/* ── flag table ── */
+.flag-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 28px;
+  font-size: 0.84375rem;
+}
+
+.flag-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--text2);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 0 16px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.flag-table td {
+  padding: 12px 16px 12px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+  vertical-align: top;
+}
+
+.flag-table tr:last-child td { border-bottom: none; }
+
+.flag-table td:first-child {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--green);
+  white-space: nowrap;
+}
+
+.flag-table td:nth-child(2) {
+  color: var(--text);
+  font-size: 0.84375rem;
+}
+
+/* ── outcome legend ── */
+.outcome-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.outcome-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 7px 12px;
+  font-size: 0.8125rem;
+}
+
+.outcome-pill code {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+/* ── completion section ── */
+.completion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.completion-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.completion-label {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text2);
+  background: var(--surface2);
+}
+
+.completion-block pre {
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 0.775rem;
+  color: var(--text2);
+  overflow-x: auto;
+}
+
+.completion-block pre .cmd { color: var(--green); }
+
+/* ── responsive ── */
+@media (max-width: 860px) {
+  .demo-two-col { grid-template-columns: 1fr; }
+  .completion-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo">disk<em>why</em></a>
+    <ul class="nav-links">
+      <li><a href="index.html#what-it-finds">categories</a></li>
+      <li><a href="index.html#features">features</a></li>
+      <li><a href="showcase.html" class="active">showcase</a></li>
+    </ul>
+    <a href="https://github.com/dhananjay6561/diskwhy" class="nav-gh" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- PAGE HEADER -->
+<section class="page-hero">
+  <div class="container">
+    <div class="page-hero-inner">
+      <div>
+        <h1>See it in action.</h1>
+        <p>Real command output. Realistic data. No invented scenarios — these reflect exactly what diskwhy produces on a typical developer machine.</p>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+        <a href="index.html" class="btn btn-outline">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          Back to home
+        </a>
+        <a href="https://github.com/dhananjay6561/diskwhy" class="btn btn-green" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          Install
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DEMO 1: scan ── -->
+<section class="demo">
+  <div class="container">
+    <div class="demo-header">
+      <span class="demo-num">01</span>
+      <h2 class="demo-title">diskwhy scan</h2>
+    </div>
+    <p class="demo-desc">Quick scan of your home directory. Finds space hogs by category and shows a size-sorted list with staleness scores. The disk header shows total capacity and how much is in use.</p>
+
+    <div class="terminal">
+      <div class="term-bar">
+        <div class="term-dots">
+          <div class="td td-r"></div><div class="td td-y"></div><div class="td td-g"></div>
+        </div>
+        <div class="term-label">zsh — ~</div>
+      </div>
+      <div class="term-body"><span class="tp">~</span> <span class="tc">diskwhy scan</span>
+
+<span class="tsi">  Scanning /Users/dj (quick) ...</span>
+
+<span class="tsi">  macOS / Macintosh HD  ·  499.9 GB total  ·  312.3 GB used  ·  187.6 GB free</span>
+
+<span class="th">  FOUND 4.2 GB across 8 items</span>
+<span class="ts">  ─────────────────────────────────────────────────────────────────</span>
+<span class="tsi">   1  </span><span class="tcat">node_modules  </span><span class="tsi">~/old-app/node_modules              </span><span class="tsz">1.8 GB  </span><span class="tu">unused</span>
+<span class="tsi">   2  </span><span class="tcat">docker        </span><span class="tsi">3 dangling images · 2 unused volumes </span><span class="tsz">923 MB  </span><span class="tz">—</span>
+<span class="tsi">   3  </span><span class="tcat">xcode_derived </span><span class="tsi">~/Library/Developer/Xcode/DerivedData</span><span class="tsz">631 MB  </span><span class="tst">stale</span>
+<span class="tsi">   4  </span><span class="tcat">node_modules  </span><span class="tsi">~/blog/node_modules                  </span><span class="tsz">412 MB  </span><span class="tr">recent</span>
+<span class="tsi">   5  </span><span class="tcat">pycache       </span><span class="tsi">~/scripts/__pycache__                </span><span class="tsz">248 MB  </span><span class="tst">stale</span>
+<span class="tsi">   6  </span><span class="tcat">brew_cache    </span><span class="tsi">~/Library/Caches/Homebrew            </span><span class="tsz">178 MB  </span><span class="tu">unused</span>
+<span class="tsi">   7  </span><span class="tcat">git_objects   </span><span class="tsi">~/monorepo/.git                      </span><span class="tsz"> 94 MB  </span><span class="tst">stale</span>
+<span class="tsi">   8  </span><span class="tcat">logs          </span><span class="tsi">~/Library/Logs                       </span><span class="tsz"> 81 MB  </span><span class="tst">stale</span>
+<span class="ts">  ─────────────────────────────────────────────────────────────────</span>
+
+<span class="tsi">  Run: </span><span class="tc">diskwhy clean --all --dry-run</span>
+
+<span class="tp">~</span> <span class="cursor">▋</span></div>
+    </div>
+
+    <!-- scan flags -->
+    <table class="flag-table" style="margin-top:36px">
+      <thead>
+        <tr>
+          <th style="width:200px">Flag</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>--path &lt;dir&gt;</td>
+          <td>Scan a specific directory instead of home. Shows scan_mode: "path" in JSON output.</td>
+        </tr>
+        <tr>
+          <td>--deep</td>
+          <td>Also walks /usr/local, /opt/homebrew, /var/cache, and other system directories. Shows scan_mode: "deep".</td>
+        </tr>
+        <tr>
+          <td>--json</td>
+          <td>Emit structured JSON with schema_version: 1. Safe to pipe to jq or parse in scripts.</td>
+        </tr>
+        <tr>
+          <td>--verbose</td>
+          <td>Show per-directory timing, resolved symlink paths, and staleness source (atime / mtime / sentinel).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── DEMO 2: clean dry-run then actual ── -->
+<section class="demo">
+  <div class="container">
+    <div class="demo-header">
+      <span class="demo-num">02</span>
+      <h2 class="demo-title">diskwhy clean</h2>
+    </div>
+    <p class="demo-desc">Always run <code>--dry-run</code> first to preview what will be deleted. Active items are unconditionally skipped. When you're ready, remove <code>--dry-run</code> and confirm.</p>
+
+    <div class="demo-two-col">
+      <div>
+        <div class="col-label">preview with --dry-run</div>
+        <div class="terminal">
+          <div class="term-bar">
+            <div class="term-dots">
+              <div class="td td-r"></div><div class="td td-y"></div><div class="td td-g"></div>
+            </div>
+            <div class="term-label">diskwhy clean --all --dry-run</div>
+          </div>
+          <div class="term-body"><span class="tp">~</span> <span class="tc">diskwhy clean <span class="tf">--all --dry-run</span></span>
+
+<span class="tsi">  Scanning (deep) ...</span>
+
+<span class="th">  CLEAN PREVIEW — no changes will be made</span>
+<span class="ts">  ─────────────────────────────────────────────────────</span>
+<span class="tok">  ✓</span> <span class="tsi">dry-run  </span><span class="tcat">node_modules  </span><span class="tsi">~/old-app/node_modules   </span><span class="tsz">1.8 GB</span>
+<span class="tok">  ✓</span> <span class="tsi">dry-run  </span><span class="tcat">xcode_derived </span><span class="tsi">~/Library/Developer/Xcode</span><span class="tsz">631 MB</span>
+<span class="tok">  ✓</span> <span class="tsi">dry-run  </span><span class="tcat">pycache       </span><span class="tsi">~/scripts/__pycache__    </span><span class="tsz">248 MB</span>
+<span class="tok">  ✓</span> <span class="tsi">dry-run  </span><span class="tcat">brew_cache    </span><span class="tsi">~/Library/Caches/Homebrew</span><span class="tsz">178 MB</span>
+<span class="tgc">  ✓</span> <span class="tsi">dry-run  </span><span class="tcat">git_objects   </span><span class="tsi">~/monorepo/.git          </span><span class="tsz"> 94 MB</span><span class="tgc"> → gc</span>
+<span class="tok">  ✓</span> <span class="tsi">dry-run  </span><span class="tcat">logs          </span><span class="tsi">~/Library/Logs           </span><span class="tsz"> 81 MB</span>
+<span class="tsk">  ✗</span> <span class="tsi">skipped  </span><span class="tcat">node_modules  </span><span class="tsi">~/blog/node_modules      </span><span class="tsz">412 MB</span><span class="tsk"> active</span>
+<span class="ts">  ─────────────────────────────────────────────────────</span>
+
+<span class="tsi">  Recoverable: </span><span class="tsz">3.0 GB  </span><span class="tsi">|  1 item skipped (active)</span>
+<span class="tsi">  Docker: 3 images + 2 volumes = 923 MB (included)</span>
+
+<span class="tsi">  Run without </span><span class="tf">--dry-run</span><span class="tsi"> to apply.</span>
+
+<span class="tp">~</span> <span class="cursor">▋</span></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="col-label">run it</div>
+        <div class="terminal">
+          <div class="term-bar">
+            <div class="term-dots">
+              <div class="td td-r"></div><div class="td td-y"></div><div class="td td-g"></div>
+            </div>
+            <div class="term-label">diskwhy clean --all --yes</div>
+          </div>
+          <div class="term-body"><span class="tp">~</span> <span class="tc">diskwhy clean <span class="tf">--all --yes</span></span>
+
+<span class="tsi">  Scanning (deep) ...</span>
+
+<span class="th">  CLEANING 6 items · 3.0 GB recoverable</span>
+<span class="ts">  ─────────────────────────────────────────────────────</span>
+<span class="tok">  ✓ deleted  </span><span class="tcat">node_modules  </span><span class="tsi">~/old-app/node_modules   </span><span class="tsz">1.8 GB</span>
+<span class="tok">  ✓ deleted  </span><span class="tcat">xcode_derived </span><span class="tsi">~/Library/Developer/Xcode</span><span class="tsz">631 MB</span>
+<span class="tok">  ✓ deleted  </span><span class="tcat">pycache       </span><span class="tsi">~/scripts/__pycache__    </span><span class="tsz">248 MB</span>
+<span class="tok">  ✓ deleted  </span><span class="tcat">brew_cache    </span><span class="tsi">~/Library/Caches/Homebrew</span><span class="tsz">178 MB</span>
+<span class="tgc">  ✓ gc run   </span><span class="tcat">git_objects   </span><span class="tsi">~/monorepo/.git          </span><span class="tsz"> 94 MB</span>
+<span class="tok">  ✓ deleted  </span><span class="tcat">logs          </span><span class="tsi">~/Library/Logs           </span><span class="tsz"> 81 MB</span>
+<span class="tsk">  ✗ skipped  </span><span class="tcat">node_modules  </span><span class="tsi">~/blog/node_modules      </span><span class="tsz">412 MB</span><span class="tsk"> active</span>
+<span class="ts">  ─────────────────────────────────────────────────────</span>
+<span class="tsi">  Docker pruned: 3 images + 2 volumes  </span><span class="tsz">923 MB</span>
+<span class="ts">  ─────────────────────────────────────────────────────</span>
+
+<span class="tok">  Freed: 3.9 GB</span><span class="tsi"> in 6 operations (1 skipped)</span>
+
+<span class="tp">~</span> <span class="cursor">▋</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- clean outcomes legend -->
+    <div style="margin-top: 32px;">
+      <p style="font-size:.84375rem; color:var(--text2); margin-bottom:14px">Every item in the output has an outcome. The six possible states:</p>
+      <div class="outcome-row">
+        <div class="outcome-pill">
+          <span style="color:var(--text2)">dry_run</span>
+          <span style="color:var(--text2); font-size:.8rem">would have been deleted</span>
+        </div>
+        <div class="outcome-pill">
+          <span style="color:var(--green)">deleted</span>
+          <span style="color:var(--text2); font-size:.8rem">removed from disk</span>
+        </div>
+        <div class="outcome-pill">
+          <span style="color:#a78bfa">gc_run</span>
+          <span style="color:var(--text2); font-size:.8rem">git gc ran on the repo</span>
+        </div>
+        <div class="outcome-pill">
+          <span style="color:#60a5fa">trashed</span>
+          <span style="color:var(--text2); font-size:.8rem">moved to system Trash</span>
+        </div>
+        <div class="outcome-pill">
+          <span style="color:var(--text3)">skipped</span>
+          <span style="color:var(--text2); font-size:.8rem">active, filtered, or blocklisted</span>
+        </div>
+        <div class="outcome-pill">
+          <span style="color:var(--red)">error</span>
+          <span style="color:var(--text2); font-size:.8rem">deletion failed (permissions, etc.)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DEMO 3: interactive shell ── -->
+<section class="demo">
+  <div class="container">
+    <div class="demo-header">
+      <span class="demo-num">03</span>
+      <h2 class="demo-title">diskwhy shell</h2>
+    </div>
+    <p class="demo-desc">Run <code>diskwhy</code> with no arguments to open the interactive REPL. Slash commands for scan, clean, help, and more. Useful when you want to run multiple operations without retyping the binary. Adapts to dark and light terminals.</p>
+
+    <div class="terminal">
+      <div class="term-bar">
+        <div class="term-dots">
+          <div class="td td-r"></div><div class="td td-y"></div><div class="td td-g"></div>
+        </div>
+        <div class="term-label">zsh — diskwhy shell</div>
+      </div>
+      <div class="term-body"><span class="tp">~</span> <span class="tc">diskwhy</span>
+
+<span class="tok"> /$$$$$$$  /$$$$$$  /$$$$$$  /$$   /$$
+| $$__  $$|_  $$_/ /$$__  $$| $$  /$$/
+| $$  \ $$  | $$  | $$  \__/| $$ /$$/
+| $$$$$$$/ /$$$$$$|  $$$$$$/| $$ \  $$
+|_______/ |______/ \______/ |__/  \__/</span>
+
+<span class="tok"> /$$      /$$ /$$   /$$ /$$     /$$
+| $$  /$ | $$| $$  | $$|  $$   /$$/
+| $$ /$$$| $$| $$  | $$ \  $$ /$$/
+|__/     \__/|__/  |__/    |__/</span>
+
+<span class="tsi">  Your disk is full. But why?
+  Made by DJ
+</span>
+<span class="tsi">  Commands:
+    /scan [--deep] [--path &lt;dir&gt;]
+    /clean [--all|--node|--cache|--git|--logs] [--dry-run] [--trash] [--yes]
+    /version    /help    /home    /clear    /exit
+</span>
+<span class="tcat">diskwhy&gt;</span> <span class="tc">/scan --path ~/projects/webapp</span>
+
+<span class="tsi">  Scanning ~/projects/webapp ...</span>
+
+<span class="th">  FOUND 2.1 GB across 3 items</span>
+<span class="ts">  ─────────────────────────────────────────────</span>
+<span class="tsi">  1  </span><span class="tcat">node_modules  </span><span class="tsi">node_modules  </span><span class="tsz">1.9 GB  </span><span class="tst">stale</span>
+<span class="tsi">  2  </span><span class="tcat">pycache       </span><span class="tsi">__pycache__   </span><span class="tsz"> 89 MB  </span><span class="tst">stale</span>
+<span class="tsi">  3  </span><span class="tcat">git_objects   </span><span class="tsi">.git          </span><span class="tsz"> 94 MB  </span><span class="tst">stale</span>
+
+<span class="tcat">diskwhy&gt;</span> <span class="tc">/clean <span class="tf">--node --cache --yes</span></span>
+
+<span class="tsi">  Scanning ...</span>
+
+<span class="tok">  ✓ deleted  </span><span class="tcat">node_modules  </span><span class="tsz">1.9 GB</span>
+<span class="tok">  ✓ deleted  </span><span class="tcat">pycache       </span><span class="tsz"> 89 MB</span>
+
+<span class="tok">  Freed: 1.99 GB</span>
+
+<span class="tcat">diskwhy&gt;</span> <span class="tc">/exit</span>
+
+<span class="tok">  bye</span>
+
+<span class="tp">~</span> <span class="cursor">▋</span></div>
+    </div>
+
+    <!-- shell commands reference -->
+    <table class="flag-table" style="margin-top:36px">
+      <thead>
+        <tr>
+          <th style="width:260px">Command</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>/scan [flags]</td><td>Run a scan. Accepts the same flags as <code style="font-family:var(--mono);font-size:.85em;color:var(--text)">diskwhy scan</code>.</td></tr>
+        <tr><td>/clean [flags]</td><td>Run clean. Accepts the same flags as <code style="font-family:var(--mono);font-size:.85em;color:var(--text)">diskwhy clean</code>.</td></tr>
+        <tr><td>/help</td><td>Show available commands and examples.</td></tr>
+        <tr><td>/home</td><td>Re-render the branded home screen.</td></tr>
+        <tr><td>/version</td><td>Print the binary version.</td></tr>
+        <tr><td>/clear</td><td>Clear the terminal screen.</td></tr>
+        <tr><td>/exit</td><td>Quit the shell.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── DEMO 4: JSON output ── -->
+<section class="demo">
+  <div class="container">
+    <div class="demo-header">
+      <span class="demo-num">04</span>
+      <h2 class="demo-title">JSON output</h2>
+    </div>
+    <p class="demo-desc">Both <code>diskwhy scan</code> and <code>diskwhy clean</code> support <code>--json</code>. The output has a stable <code>schema_version: 1</code> contract. Pipe to jq, parse in CI, or feed into dashboards.</p>
+
+    <div class="demo-two-col" style="align-items:start">
+      <div>
+        <div class="col-label">diskwhy scan --json</div>
+        <div class="json-wrap">
+          <div class="json-bar">
+            <div class="json-bar-left">
+              <div class="json-dots">
+                <div class="jd jd-r"></div><div class="jd jd-y"></div><div class="jd jd-g"></div>
+              </div>
+              <span class="json-filename">scan_output.json</span>
+            </div>
+            <span class="json-schema-badge">schema_version: 1</span>
+          </div>
+          <div class="json-pre">{
+  <span class="jk">"schema_version"</span>: <span class="jn">1</span>,
+  <span class="jk">"scanned_at"</span>:     <span class="jv">"2026-01-15T10:30:42Z"</span>,
+  <span class="jk">"scan_mode"</span>:      <span class="jv">"quick"</span>,
+  <span class="jk">"header"</span>:         <span class="jv">"[macOS / Macintosh HD]"</span>,
+  <span class="jk">"disk"</span>: {
+    <span class="jk">"total_bytes"</span>: <span class="jn">499963174912</span>,
+    <span class="jk">"used_bytes"</span>:  <span class="jn">312345678901</span>,
+    <span class="jk">"free_bytes"</span>:  <span class="jn">187617496011</span>,
+    <span class="jk">"mount"</span>:        <span class="jv">"/"</span>
+  },
+  <span class="jk">"items"</span>: [
+    {
+      <span class="jk">"path"</span>:             <span class="jv">"/Users/dj/old-app/node_modules"</span>,
+      <span class="jk">"category"</span>:         <span class="jv">"node_modules"</span>,
+      <span class="jk">"size_bytes"</span>:       <span class="jn">1879048192</span>,
+      <span class="jk">"staleness_score"</span>:  <span class="jv">"unused"</span>,
+      <span class="jk">"staleness_source"</span>: <span class="jv">"atime"</span>
+    },
+    <span class="jp">// ... more items</span>
+  ],
+  <span class="jk">"docker"</span>: {
+    <span class="jk">"dangling_images"</span>:    <span class="jn">3</span>,
+    <span class="jk">"dangling_bytes"</span>:    <span class="jn">967884800</span>,
+    <span class="jk">"unused_volumes"</span>:     <span class="jn">2</span>,
+    <span class="jk">"unused_vol_bytes"</span>:   <span class="jn">8388608</span>,
+    <span class="jk">"containers_total"</span>:   <span class="jn">4</span>,
+    <span class="jk">"containers_stopped"</span>: <span class="jn">1</span>
+  },
+  <span class="jk">"summary"</span>: {
+    <span class="jk">"total_items"</span>: <span class="jn">8</span>,
+    <span class="jk">"total_bytes"</span>: <span class="jn">4509715456</span>,
+    <span class="jk">"elapsed_ms"</span>:  <span class="jn">834</span>
+  }
+}</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="col-label">diskwhy clean --all --json</div>
+        <div class="json-wrap">
+          <div class="json-bar">
+            <div class="json-bar-left">
+              <div class="json-dots">
+                <div class="jd jd-r"></div><div class="jd jd-y"></div><div class="jd jd-g"></div>
+              </div>
+              <span class="json-filename">clean_output.json</span>
+            </div>
+            <span class="json-schema-badge">schema_version: 1</span>
+          </div>
+          <div class="json-pre">{
+  <span class="jk">"schema_version"</span>:      <span class="jn">1</span>,
+  <span class="jk">"cleaned_at"</span>:          <span class="jv">"2026-01-15T10:31:18Z"</span>,
+  <span class="jk">"dry_run"</span>:             <span class="jb">false</span>,
+  <span class="jk">"use_trash"</span>:           <span class="jb">false</span>,
+  <span class="jk">"results"</span>: [
+    {
+      <span class="jk">"path"</span>:       <span class="jv">"/Users/dj/old-app/node_modules"</span>,
+      <span class="jk">"category"</span>:   <span class="jv">"node_modules"</span>,
+      <span class="jk">"outcome"</span>:    <span class="jv">"deleted"</span>,
+      <span class="jk">"size_bytes"</span>: <span class="jn">1879048192</span>,
+      <span class="jk">"error"</span>:      <span class="jv">""</span>
+    },
+    {
+      <span class="jk">"path"</span>:       <span class="jv">"/Users/dj/monorepo/.git"</span>,
+      <span class="jk">"category"</span>:   <span class="jv">"git_objects"</span>,
+      <span class="jk">"outcome"</span>:    <span class="jv">"gc_run"</span>,
+      <span class="jk">"size_bytes"</span>: <span class="jn">98566144</span>,
+      <span class="jk">"error"</span>:      <span class="jv">""</span>
+    },
+    <span class="jp">// ... more results</span>
+  ],
+  <span class="jk">"docker_freed_bytes"</span>: <span class="jn">967884800</span>,
+  <span class="jk">"summary"</span>: {
+    <span class="jk">"deleted"</span>:     <span class="jn">5</span>,
+    <span class="jk">"trashed"</span>:     <span class="jn">0</span>,
+    <span class="jk">"skipped"</span>:     <span class="jn">1</span>,
+    <span class="jk">"errors"</span>:      <span class="jn">0</span>,
+    <span class="jk">"freed_bytes"</span>: <span class="jn">3145728000</span>
+  }
+}</div>
+        </div>
+
+        <div style="margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 16px 18px;">
+          <div style="font-size:.75rem; color:var(--text2); font-family:var(--mono); margin-bottom:10px; text-transform:uppercase; letter-spacing:.06em">Example: jq query</div>
+          <div class="terminal" style="box-shadow:none">
+            <div class="term-bar" style="padding:8px 12px">
+              <div class="term-dots"><div class="td td-r"></div><div class="td td-y"></div><div class="td td-g"></div></div>
+              <div class="term-label">pipe to jq</div>
+            </div>
+            <div class="term-body" style="padding:14px 16px; font-size:.75rem"><span class="tp">~</span> <span class="tc">diskwhy scan --json \
+    | jq <span class="tf">'.items | sort_by(-.size_bytes) | .[0:3]'</span></span>
+
+<span class="tsi">[
+  {
+    "path":            "~/old-app/node_modules",
+    "category":        "node_modules",
+    "size_bytes":      1879048192,
+    "staleness_score": "unused"
+  },
+  ...
+]</span>
+
+<span class="tp">~</span> <span class="tc">diskwhy clean --all --json \
+    | jq <span class="tf">'.summary.freed_bytes / 1073741824 | floor'</span></span>
+
+<span class="tsi">3</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DEMO 5: shell completion ── -->
+<section class="demo" style="border-bottom:none; padding-bottom:40px">
+  <div class="container">
+    <div class="demo-header">
+      <span class="demo-num">05</span>
+      <h2 class="demo-title">Shell completion</h2>
+    </div>
+    <p class="demo-desc">Tab completion for all flags and subcommands, generated by cobra's built-in completion engine. Install once and forget.</p>
+
+    <div class="completion-grid">
+      <div class="completion-block">
+        <div class="completion-label">bash</div>
+        <pre><span class="cmd">diskwhy completion bash</span> &gt; /usr/local/etc/bash_completion.d/diskwhy
+<span class="cmd">source ~/.bashrc</span></pre>
+      </div>
+      <div class="completion-block">
+        <div class="completion-label">zsh</div>
+        <pre><span class="cmd">diskwhy completion zsh</span> &gt; "${fpath[1]}/_diskwhy"
+<span class="cmd">source ~/.zshrc</span></pre>
+      </div>
+      <div class="completion-block">
+        <div class="completion-label">fish</div>
+        <pre><span class="cmd">diskwhy completion fish</span> &gt; ~/.config/fish/completions/diskwhy.fish</pre>
+      </div>
+      <div class="completion-block">
+        <div class="completion-label">powershell</div>
+        <pre><span class="cmd">diskwhy completion powershell</span> | Out-String | Invoke-Expression</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-row">
+      <div class="footer-brand"><span>disk</span>why</div>
+      <ul class="footer-links">
+        <li><a href="index.html">home</a></li>
+        <li><a href="showcase.html">showcase</a></li>
+        <li><a href="https://github.com/dhananjay6561/diskwhy" target="_blank" rel="noopener">github</a></li>
+        <li><a href="https://github.com/dhananjay6561/diskwhy/blob/main/README.md" target="_blank" rel="noopener">readme</a></li>
+        <li><a href="https://github.com/dhananjay6561/diskwhy/blob/main/SCHEMA_CHANGELOG.md" target="_blank" rel="noopener">schema</a></li>
+      </ul>
+      <div class="footer-note">MIT License</div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
