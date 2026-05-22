@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / go ${{ matrix.go }}
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.21', '1.22', '1.23']
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test -race -coverprofile=coverage.out ./internal/scan/... ./internal/clean/... ./internal/tui/... ./internal/jsonout/...
+
+      - name: coverage gate (70%)
+        run: |
+          total=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%')
+          echo "coverage: ${total}%"
+          awk "BEGIN { exit (${total}+0 < 70) ? 1 : 0 }" \
+            && echo "PASS: ${total}% >= 70%" \
+            || { echo "FAIL: ${total}% is below 70% threshold"; exit 1; }
+
+      - name: check os.Remove placement
+        run: |
+          bad=$(grep -rn "os\.Remove\b\|os\.RemoveAll\b" --include="*.go" . \
+            | grep -v "^./internal/clean/safe\.go:" \
+            | grep -v "_test\.go:")
+          if [ -n "$bad" ]; then
+            echo "FAIL: os.Remove/RemoveAll found outside internal/clean/safe.go:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "PASS: os.Remove usage confined to internal/clean/safe.go"
