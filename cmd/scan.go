@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dhananjay6561/diskwhy/internal/docker"
 	"github.com/dhananjay6561/diskwhy/internal/scan"
 	"github.com/dhananjay6561/diskwhy/internal/tui"
 	"github.com/spf13/cobra"
@@ -45,11 +46,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 	staleDays := 90
 	noColor := false
 	verbose := false
+	skipDocker := false
 	if GlobalConfig != nil {
 		workers = GlobalConfig.Workers
 		staleDays = GlobalConfig.StaleDays
 		noColor = GlobalConfig.NoColor
 		verbose = GlobalConfig.Verbose
+		skipDocker = GlobalConfig.SkipDocker
 	}
 
 	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
@@ -83,20 +86,26 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return ctx.Err()
 	}
 
+	home, _ := os.UserHomeDir()
 	statsPath := scanPath
 	if statsPath == "" {
-		home, _ := os.UserHomeDir()
 		statsPath = home
 	}
 	total, used, free := tui.DiskUsage(statsPath)
 
-	printScanResult(result, elapsed, total, used, free, caps, verbose)
+	var dockerResult *docker.Result
+	if !skipDocker {
+		dockerResult, _ = docker.Query(ctx, home, verbose)
+	}
+
+	printScanResult(result, dockerResult, elapsed, total, used, free, caps, verbose)
 	return nil
 }
 
 // printScanResult renders the full scan output using the TUI package.
 func printScanResult(
 	result *scan.Result,
+	dockerResult *docker.Result,
 	elapsed time.Duration,
 	total, used, free int64,
 	caps tui.Caps,
@@ -156,6 +165,15 @@ func printScanResult(
 		}
 	}
 
+	// Include Docker total in maxBytes computation so bars scale correctly.
+	var dockerTotal int64
+	if dockerResult != nil {
+		dockerTotal = dockerResult.UnusedImageBytes + dockerResult.UsedImageBytes + dockerResult.VolumeBytes
+		if dockerTotal > maxBytes {
+			maxBytes = dockerTotal
+		}
+	}
+
 	var safeBytes int64
 	for _, cat := range order {
 		a := byCategory[cat]
@@ -173,6 +191,14 @@ func printScanResult(
 		}
 	}
 
+	if dockerResult != nil && dockerTotal > 0 {
+		dockerNote := dockerUnusedNote(dockerResult, caps)
+		fmt.Fprintln(os.Stdout, tui.CategoryLine("Docker", "🐳", dockerTotal, maxBytes,
+			dockerResult.UnusedImageCount+dockerResult.UsedImageCount+dockerResult.VolumeCount,
+			dockerNote, caps))
+		safeBytes += dockerResult.UnusedImageBytes
+	}
+
 	if safeBytes > 0 {
 		fmt.Fprintln(os.Stdout, tui.SafeToCleanLine(safeBytes, caps))
 	}
@@ -182,6 +208,23 @@ func printScanResult(
 		fmt.Fprintf(os.Stderr, "\n  %d path(s) skipped — run with sudo to include system directories\n",
 			result.SkippedCount)
 	}
+}
+
+// dockerUnusedNote returns a display note summarising unused Docker images.
+func dockerUnusedNote(d *docker.Result, caps tui.Caps) string {
+	if d.UnusedImageCount == 0 {
+		ok := "[OK]"
+		if caps.Emoji {
+			ok = "✅"
+		}
+		return ok + " All images in use"
+	}
+	warn := "[!]"
+	if caps.Emoji {
+		warn = "🟡"
+	}
+	gb := float64(d.UnusedImageBytes) / (1 << 30)
+	return fmt.Sprintf("%s %d unused image(s) (%.1f GB) — safe to remove", warn, d.UnusedImageCount, gb)
 }
 
 // stalenessNote returns a short display note for a staleness level.
