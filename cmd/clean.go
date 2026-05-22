@@ -1,13 +1,23 @@
 package cmd
 
 import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+	"syscall"
+
+	"github.com/dhananjay6561/diskwhy/internal/clean"
+	"github.com/dhananjay6561/diskwhy/internal/docker"
+	"github.com/dhananjay6561/diskwhy/internal/scan"
+	"github.com/dhananjay6561/diskwhy/internal/tui"
 	"github.com/spf13/cobra"
 )
 
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
 	Short: "Clean identified space hogs with confirmation",
-	Long: `Clean selected categories of disk hogs. Always shows a dry-run preview before asking
+	Long: `Clean selected categories of disk hogs. Always shows a preview before asking
 for confirmation. Defaults to moving items to the OS trash (recoverable).
 
 Examples:
@@ -20,9 +30,7 @@ Examples:
   diskwhy clean --all --dry-run     # Preview everything without changing anything
   diskwhy clean --all --trash       # Move all safe items to OS trash
   diskwhy clean --docker --yes      # Clean Docker without interactive prompt`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
+	RunE: runClean,
 }
 
 func init() {
@@ -38,3 +46,296 @@ func init() {
 	cleanCmd.Flags().Bool("no-trash", false, "Permanently delete instead of moving to trash")
 	cleanCmd.Flags().Bool("json", false, "Output results as JSON (schema_version: 1)")
 }
+
+func runClean(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	flagDocker, _ := cmd.Flags().GetBool("docker")
+	flagNode, _ := cmd.Flags().GetBool("node")
+	flagCache, _ := cmd.Flags().GetBool("cache")
+	flagGit, _ := cmd.Flags().GetBool("git")
+	flagLogs, _ := cmd.Flags().GetBool("logs")
+	flagAll, _ := cmd.Flags().GetBool("all")
+	flagDryRun, _ := cmd.Flags().GetBool("dry-run")
+	flagYes, _ := cmd.Flags().GetBool("yes")
+	flagTrash, _ := cmd.Flags().GetBool("trash")
+	flagNoTrash, _ := cmd.Flags().GetBool("no-trash")
+
+	noColor := false
+	verbose := false
+	staleDays := 90
+	workers := 4
+	gitTimeoutSecs := 30
+	if GlobalConfig != nil {
+		noColor = GlobalConfig.NoColor
+		verbose = GlobalConfig.Verbose
+		staleDays = GlobalConfig.StaleDays
+		workers = GlobalConfig.Workers
+		gitTimeoutSecs = GlobalConfig.GitTimeoutSecs
+		if GlobalConfig.Trash {
+			flagTrash = true
+		}
+	}
+
+	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
+	caps := tui.Detect(noColor || noColorFlag)
+
+	useTrash := flagTrash && !flagNoTrash
+
+	// Resolve which categories to clean.
+	categories := resolveCategories(flagAll, flagNode, flagCache, flagGit, flagLogs)
+	needFileScan := len(categories) > 0
+	needDocker := flagDocker || flagAll
+
+	if !needFileScan && !needDocker {
+		return cmd.Help()
+	}
+
+	home, _ := os.UserHomeDir()
+
+	// Lower I/O priority for the re-scan.
+	_ = syscall.Setpriority(syscall.PRIO_PROCESS, 0, 10)
+
+	// Re-scan to get fresh candidates.
+	var scanItems []scan.CandidateItem
+	if needFileScan {
+		stopSpinner := tui.StartSpinner("Scanning", caps)
+		scanCfg := scan.Config{
+			Root:      "",
+			Deep:      true,
+			StaleDays: staleDays,
+			Workers:   workers,
+		}
+		result, err := scan.Scan(ctx, scanCfg)
+		stopSpinner()
+		if err != nil && ctx.Err() == nil {
+			return fmt.Errorf("scan failed: %w\nFix: check that the target path exists and is readable", err)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		scanItems = result.Items
+	}
+
+	// Build candidate list filtered to requested categories.
+	var toClean []scan.CandidateItem
+	catSet := make(map[string]bool, len(categories))
+	for _, c := range categories {
+		catSet[c] = true
+	}
+	for _, item := range scanItems {
+		if catSet[item.Category] {
+			toClean = append(toClean, item)
+		}
+	}
+
+	// Docker query.
+	var dockerFreeable int64
+	if needDocker {
+		dResult, _ := docker.Query(ctx, home, verbose)
+		dockerFreeable = dResult.UnusedImageBytes + dResult.VolumeBytes
+	}
+
+	if len(toClean) == 0 && dockerFreeable == 0 {
+		fmt.Fprintln(os.Stdout, "  Nothing to clean.")
+		return nil
+	}
+
+	// Show preview.
+	printCleanPreview(toClean, dockerFreeable, caps, flagDryRun)
+
+	if flagDryRun {
+		return nil
+	}
+
+	// Confirmation.
+	if !flagYes {
+		if !confirm(flagAll) {
+			fmt.Fprintln(os.Stdout, "  Aborted.")
+			return nil
+		}
+	}
+
+	// Clean file-system items.
+	var totalFreed int64
+	var errCount int
+
+	if len(toClean) > 0 {
+		cleanCfg := clean.Config{
+			Categories:     categories,
+			DryRun:         false,
+			UseTrash:       useTrash,
+			GitTimeoutSecs: gitTimeoutSecs,
+			Home:           home,
+		}
+		results := clean.Run(ctx, cleanCfg, toClean)
+		totalFreed, errCount = printCleanResults(results, caps)
+	}
+
+	// Docker prune.
+	if needDocker && dockerFreeable > 0 {
+		fmt.Fprintf(os.Stdout, "  Pruning Docker images and volumes...\n")
+		freed, err := docker.PruneUnused(ctx, home, false, verbose)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  docker prune failed: %s\n", err)
+			errCount++
+		} else {
+			totalFreed += freed
+			gb := float64(freed) / (1 << 30)
+			fmt.Fprintf(os.Stdout, "  Docker: freed %.1f GB\n", gb)
+		}
+	}
+
+	// Summary.
+	fmt.Fprintln(os.Stdout)
+	if errCount > 0 {
+		fmt.Fprintf(os.Stdout, "  Done with %d error(s). Run with --verbose for details.\n", errCount)
+	} else {
+		gb := float64(totalFreed) / (1 << 30)
+		fmt.Fprintf(os.Stdout, "  Done. Freed ~%.1f GB.\n", gb)
+	}
+
+	return nil
+}
+
+// resolveCategories maps flag booleans to category name slices.
+func resolveCategories(all, node, cache, git, logs bool) []string {
+	var cats []string
+	add := func(c ...string) { cats = append(cats, c...) }
+
+	if all || node {
+		add(scan.CatNodeModules)
+	}
+	if all || cache {
+		add(scan.CatBrewCache, scan.CatPipCache, scan.CatNpmCache, scan.CatAptCache, scan.CatXcodeDerived, scan.CatPycache)
+	}
+	if all || git {
+		add(scan.CatGitObjects)
+	}
+	if all || logs {
+		add(scan.CatLogs, scan.CatJournald)
+	}
+	if all {
+		add(scan.CatTrash, scan.CatDownloads)
+	}
+	return cats
+}
+
+// printCleanPreview shows what would be cleaned.
+func printCleanPreview(items []scan.CandidateItem, dockerBytes int64, caps tui.Caps, isDryRun bool) {
+	mode := "Preview"
+	if isDryRun {
+		mode = "Dry Run"
+	}
+
+	disk := "💽"
+	if !caps.Emoji {
+		disk = "[disk]"
+	}
+	fmt.Fprintf(os.Stdout, "\n%s  diskwhy — Clean %s\n\n", disk, mode)
+
+	// Aggregate by category.
+	type agg struct {
+		total int64
+		count int
+	}
+	byCategory := make(map[string]*agg)
+	var order []string
+	for _, item := range items {
+		a, ok := byCategory[item.Category]
+		if !ok {
+			a = &agg{}
+			byCategory[item.Category] = a
+			order = append(order, item.Category)
+		}
+		a.total += item.SizeBytes
+		a.count++
+	}
+
+	var maxBytes int64
+	for _, cat := range order {
+		if v := byCategory[cat].total; v > maxBytes {
+			maxBytes = v
+		}
+	}
+	if dockerBytes > maxBytes {
+		maxBytes = dockerBytes
+	}
+
+	var totalBytes int64
+	for _, cat := range order {
+		a := byCategory[cat]
+		label := tui.CategoryLabel[cat]
+		if label == "" {
+			label = cat
+		}
+		emoji := tui.CategoryEmoji[cat]
+		fmt.Fprintln(os.Stdout, tui.CategoryLine(label, emoji, a.total, maxBytes, a.count, "", caps))
+		totalBytes += a.total
+	}
+	if dockerBytes > 0 {
+		fmt.Fprintln(os.Stdout, tui.CategoryLine("Docker (unused)", "🐳", dockerBytes, maxBytes, 1, "", caps))
+		totalBytes += dockerBytes
+	}
+
+	gb := float64(totalBytes) / (1 << 30)
+	fmt.Fprintf(os.Stdout, "\n  ~%.1f GB to be freed\n\n", gb)
+}
+
+// confirm asks the user to type "yes" for --all operations, or y/n otherwise.
+func confirm(requireYes bool) bool {
+	if requireYes {
+		fmt.Fprint(os.Stdout, "  Type 'yes' to continue: ")
+	} else {
+		fmt.Fprint(os.Stdout, "  Proceed? [y/N]: ")
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return false
+	}
+	answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+
+	if requireYes {
+		return answer == "yes"
+	}
+	return answer == "y" || answer == "yes"
+}
+
+// printCleanResults prints one line per result and returns (bytesFreed, errCount).
+func printCleanResults(results []clean.ItemResult, caps tui.Caps) (int64, int) {
+	var freed int64
+	var errCount int
+
+	for _, r := range results {
+		switch r.Outcome {
+		case clean.OutcomeDeleted:
+			gb := float64(r.BytesDelta) / (1 << 30)
+			freed += r.BytesDelta
+			fmt.Fprintf(os.Stdout, "  deleted  %-50s  %.1f GB\n", truncate(r.Path, 50), gb)
+		case clean.OutcomeTrashed:
+			freed += r.BytesDelta
+			fmt.Fprintf(os.Stdout, "  trashed  %-50s\n", truncate(r.Path, 50))
+		case clean.OutcomeGCRun:
+			fmt.Fprintf(os.Stdout, "  git gc   %-50s\n", truncate(r.Path, 50))
+		case clean.OutcomeSkipped:
+			if caps.Emoji {
+				fmt.Fprintf(os.Stdout, "  ⏭  skipped  %s\n", truncate(r.Path, 50))
+			} else {
+				fmt.Fprintf(os.Stdout, "  skipped  %s\n", truncate(r.Path, 50))
+			}
+		case clean.OutcomeError:
+			errCount++
+			fmt.Fprintf(os.Stderr, "  error    %s: %s\n", truncate(r.Path, 40), r.Err)
+		}
+	}
+	return freed, errCount
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return "..." + s[len(s)-(max-3):]
+}
+
