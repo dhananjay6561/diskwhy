@@ -11,6 +11,9 @@ import (
 // by their own size on disk, never by their target's size.
 // It returns the partial total accumulated before ctx cancellation.
 func dirSize(ctx context.Context, path string) (int64, error) {
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return 0, err

@@ -28,7 +28,8 @@ var deletableByCategory = map[string]bool{
 	scan.CatDownloads:    true,
 }
 
-// cacheCategories are always safe to delete — their contents are regenerable.
+// cacheCategories are always safe to delete — their contents are regenerable
+// or already discarded (trash).
 var cacheCategories = map[string]bool{
 	scan.CatBrewCache:    true,
 	scan.CatXcodeDerived: true,
@@ -36,6 +37,7 @@ var cacheCategories = map[string]bool{
 	scan.CatNpmCache:     true,
 	scan.CatAptCache:     true,
 	scan.CatPycache:      true,
+	scan.CatTrash:        true,
 }
 
 // isSafeToDelete returns true when item may be passed to safeRemove.
