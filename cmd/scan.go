@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dhananjay6561/diskwhy/internal/scan"
+	"github.com/dhananjay6561/diskwhy/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -40,14 +41,21 @@ func runScan(cmd *cobra.Command, args []string) error {
 	deep, _ := cmd.Flags().GetBool("deep")
 	scanPath, _ := cmd.Flags().GetString("path")
 
-	workers := 4 // safe default before config is loaded
+	workers := 4
 	staleDays := 90
+	noColor := false
+	verbose := false
 	if GlobalConfig != nil {
 		workers = GlobalConfig.Workers
 		staleDays = GlobalConfig.StaleDays
+		noColor = GlobalConfig.NoColor
+		verbose = GlobalConfig.Verbose
 	}
 
-	// Lower process priority so a disk scan doesn't affect the user's session.
+	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
+	caps := tui.Detect(noColor || noColorFlag)
+
+	// Lower process priority so the scan does not affect the user's session.
 	_ = syscall.Setpriority(syscall.PRIO_PROCESS, 0, 10)
 
 	cfg := scan.Config{
@@ -57,77 +65,117 @@ func runScan(cmd *cobra.Command, args []string) error {
 		Workers:   workers,
 	}
 
+	label := "Scanning"
+	if deep {
+		label = "Scanning (deep mode — this may take ~15s)"
+	}
+	stopSpinner := tui.StartSpinner(label, caps)
+
 	start := time.Now()
 	result, err := scan.Scan(ctx, cfg)
 	elapsed := time.Since(start)
+	stopSpinner()
+
 	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("scan failed: %w\nFix: check that the target path exists and is readable", err)
 	}
-
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	printScanResult(result, elapsed)
+	statsPath := scanPath
+	if statsPath == "" {
+		home, _ := os.UserHomeDir()
+		statsPath = home
+	}
+	total, used, free := tui.DiskUsage(statsPath)
+
+	printScanResult(result, elapsed, total, used, free, caps, verbose)
 	return nil
 }
 
-// printScanResult renders a basic text table. Phase 3 replaces this with
-// lipgloss bars and colour coding.
-func printScanResult(result *scan.Result, elapsed time.Duration) {
-	fmt.Fprintf(os.Stdout, "\ndiskwhy — Disk Analysis  %s\n", result.Header)
-	fmt.Fprintf(os.Stdout, "Scan mode: %s   Elapsed: %.1fs\n\n", result.ScanMode, elapsed.Seconds())
+// printScanResult renders the full scan output using the TUI package.
+func printScanResult(
+	result *scan.Result,
+	elapsed time.Duration,
+	total, used, free int64,
+	caps tui.Caps,
+	verbose bool,
+) {
+	fmt.Fprintln(os.Stdout, tui.Header(result.Header, caps))
+
+	if total > 0 {
+		fmt.Fprintln(os.Stdout, tui.DiskStatsLine(total, used, free, caps))
+	}
+	fmt.Fprintln(os.Stdout)
+
+	if verbose {
+		fmt.Fprintf(os.Stdout, "  Scan mode: %s   Elapsed: %.1fs\n\n",
+			result.ScanMode, elapsed.Seconds())
+	}
 
 	if len(result.Items) == 0 {
 		fmt.Fprintln(os.Stdout, "  Nothing significant found.")
+		fmt.Fprintln(os.Stdout, "  Run diskwhy scan --deep for a full recursive scan.")
 		return
 	}
 
-	// Sort by size descending.
-	items := make([]scan.CandidateItem, len(result.Items))
-	copy(items, result.Items)
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].SizeBytes > items[j].SizeBytes
-	})
-
-	// Aggregate: merge multiple items of the same category.
-	type aggregate struct {
-		total    int64
-		count    int
+	// Aggregate multiple items of the same category (e.g. many node_modules dirs).
+	type agg struct {
+		total     int64
+		count     int
 		staleness scan.StalenessLevel
 	}
-	agg := make(map[string]*aggregate)
-	order := []string{}
-	for _, item := range items {
-		a, ok := agg[item.Category]
+	byCategory := make(map[string]*agg)
+	var order []string
+
+	for _, item := range result.Items {
+		a, ok := byCategory[item.Category]
 		if !ok {
-			a = &aggregate{staleness: item.StalenessScore}
-			agg[item.Category] = a
+			a = &agg{staleness: item.StalenessScore}
+			byCategory[item.Category] = a
 			order = append(order, item.Category)
 		}
 		a.total += item.SizeBytes
 		a.count++
-		// Keep the worst (most stale) staleness signal.
 		if item.StalenessScore > a.staleness {
 			a.staleness = item.StalenessScore
 		}
 	}
 
-	fmt.Fprintf(os.Stdout, "  %-20s  %10s  %6s  %s\n", "Category", "Size", "Items", "Freshness")
-	fmt.Fprintf(os.Stdout, "  %s\n", dashes(60))
+	// Sort by total size descending.
+	sort.Slice(order, func(i, j int) bool {
+		return byCategory[order[i]].total > byCategory[order[j]].total
+	})
 
-	var totalSafe int64
+	// Compute max for proportional bar scaling.
+	var maxBytes int64
 	for _, cat := range order {
-		a := agg[cat]
-		gb := float64(a.total) / (1 << 30)
-		freshness := a.staleness.String()
-		fmt.Fprintf(os.Stdout, "  %-20s  %7.1f GB  %6d  %s\n", cat, gb, a.count, freshness)
-		if a.staleness == scan.StalenessStale || a.staleness == scan.StalenessUnused {
-			totalSafe += a.total
+		if v := byCategory[cat].total; v > maxBytes {
+			maxBytes = v
 		}
 	}
 
-	fmt.Fprintf(os.Stdout, "\n  Estimated safe to clean: ~%.1f GB\n", float64(totalSafe)/(1<<30))
+	var safeBytes int64
+	for _, cat := range order {
+		a := byCategory[cat]
+		label := tui.CategoryLabel[cat]
+		if label == "" {
+			label = cat
+		}
+		emoji := tui.CategoryEmoji[cat]
+
+		note := stalenessNote(a.staleness, caps)
+		fmt.Fprintln(os.Stdout, tui.CategoryLine(label, emoji, a.total, maxBytes, a.count, note, caps))
+
+		if a.staleness == scan.StalenessStale || a.staleness == scan.StalenessUnused {
+			safeBytes += a.total
+		}
+	}
+
+	if safeBytes > 0 {
+		fmt.Fprintln(os.Stdout, tui.SafeToCleanLine(safeBytes, caps))
+	}
 	fmt.Fprintln(os.Stdout, "  Run: diskwhy clean  to begin")
 
 	if result.SkippedCount > 0 {
@@ -136,10 +184,26 @@ func printScanResult(result *scan.Result, elapsed time.Duration) {
 	}
 }
 
-func dashes(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = '-'
+// stalenessNote returns a short display note for a staleness level.
+func stalenessNote(s scan.StalenessLevel, caps tui.Caps) string {
+	ok := "[OK]"
+	warn := "[!]"
+	danger := "[X]"
+	if caps.Emoji {
+		ok = "✅"
+		warn = "🟡"
+		danger = "🔴"
 	}
-	return string(b)
+	switch s {
+	case scan.StalenessActive:
+		return ok + " Active"
+	case scan.StalenessRecent:
+		return warn + " Recent"
+	case scan.StalenessStale:
+		return warn + " Stale — safe to review"
+	case scan.StalenessUnused:
+		return danger + " Unused — safe to delete"
+	default:
+		return "? Unknown"
+	}
 }
