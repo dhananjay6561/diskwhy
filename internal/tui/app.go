@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dhananjay6561/diskwhy/internal/clean"
 	"github.com/dhananjay6561/diskwhy/internal/docker"
 	"github.com/dhananjay6561/diskwhy/internal/scan"
 )
@@ -24,6 +24,9 @@ const (
 	viewHome appView = iota
 	viewScanning
 	viewScanResult
+	viewCleanConfirm
+	viewCleaning
+	viewCleanDone
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -41,7 +44,11 @@ type scanDoneMsg struct {
 	err          error
 }
 
-type cleanDoneMsg struct{ err error }
+type cleanDoneMsg struct {
+	results []clean.ItemResult
+	freed   int64
+	err     error
+}
 
 // ── AppModel ──────────────────────────────────────────────────────────────────
 
@@ -73,6 +80,11 @@ type AppModel struct {
 	totalFound  int64
 	safeBytes   int64
 	scrollTop   int
+
+	// clean flow
+	cleanResults []clean.ItemResult
+	cleanFreed   int64
+	cleanErr     string
 }
 
 // NewAppModel returns an initialized AppModel ready to run.
@@ -97,7 +109,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 
 	case tickMsg:
-		if m.view == viewScanning {
+		if m.view == viewScanning || m.view == viewCleaning {
 			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
 			return m, doTick()
 		}
@@ -118,7 +130,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollTop = 0
 
 	case cleanDoneMsg:
-		m.view = viewHome
+		m.cleanResults = msg.results
+		m.cleanFreed = msg.freed
+		if msg.err != nil {
+			m.cleanErr = msg.err.Error()
+		}
+		m.view = viewCleanDone
 
 	case tea.KeyMsg:
 		return m.handleKey(msg.String())
@@ -168,6 +185,30 @@ func (m AppModel) handleKey(key string) (AppModel, tea.Cmd) {
 			m.view = viewHome
 		}
 
+	case viewCleanConfirm:
+		switch key {
+		case "ctrl+c", "q", "Q":
+			return m, tea.Quit
+		case "y", "Y", "enter":
+			return m.startClean()
+		case "n", "N", "esc", "b", "B":
+			m.view = viewHome
+		}
+
+	case viewCleaning:
+		if key == "ctrl+c" {
+			return m, tea.Quit
+		}
+
+	case viewCleanDone:
+		switch key {
+		case "ctrl+c", "q", "Q":
+			return m, tea.Quit
+		default:
+			m.view = viewHome
+			m.cursor = 0
+		}
+
 	case viewScanResult:
 		switch key {
 		case "ctrl+c", "q", "Q":
@@ -204,10 +245,15 @@ func (m AppModel) startScan(deep bool) (AppModel, tea.Cmd) {
 }
 
 func (m AppModel) runClean() (AppModel, tea.Cmd) {
-	c := exec.Command(os.Args[0], "clean", "--node", "--cache", "--git", "--logs")
-	return m, tea.ExecProcess(c, func(err error) tea.Msg {
-		return cleanDoneMsg{err: err}
-	})
+	m.view = viewCleanConfirm
+	m.cleanErr = ""
+	return m, nil
+}
+
+func (m AppModel) startClean() (AppModel, tea.Cmd) {
+	m.view = viewCleaning
+	m.spinnerFrame = 0
+	return m, tea.Batch(doTick(), doCleanCmd())
 }
 
 // ── async commands ─────────────────────────────────────────────────────────────
@@ -240,6 +286,49 @@ func doScanCmd(deep bool) tea.Cmd {
 			diskUsed:     used,
 			diskFree:     free,
 		}
+	}
+}
+
+func doCleanCmd() tea.Cmd {
+	return func() tea.Msg {
+		home, _ := os.UserHomeDir()
+		categories := []string{
+			scan.CatNodeModules,
+			scan.CatBrewCache, scan.CatPipCache, scan.CatNpmCache,
+			scan.CatAptCache, scan.CatXcodeDerived, scan.CatPycache,
+			scan.CatGitObjects, scan.CatLogs, scan.CatJournald,
+		}
+		catSet := make(map[string]bool)
+		for _, c := range categories {
+			catSet[c] = true
+		}
+		cfg := scan.Config{Root: "", Deep: true, StaleDays: 90, Workers: 4}
+		result, err := scan.Scan(context.Background(), cfg)
+		if err != nil {
+			return cleanDoneMsg{err: err}
+		}
+		var toClean []scan.CandidateItem
+		for _, item := range result.Items {
+			if catSet[item.Category] {
+				toClean = append(toClean, item)
+			}
+		}
+		if len(toClean) == 0 {
+			return cleanDoneMsg{}
+		}
+		cleanCfg := clean.Config{
+			Categories:     categories,
+			DryRun:         false,
+			UseTrash:       false,
+			GitTimeoutSecs: 30,
+			Home:           home,
+		}
+		results := clean.Run(context.Background(), cleanCfg, toClean)
+		var freed int64
+		for _, r := range results {
+			freed += r.BytesDelta
+		}
+		return cleanDoneMsg{results: results, freed: freed}
 	}
 }
 
@@ -307,6 +396,12 @@ func (m AppModel) View() string {
 		return m.renderScanning()
 	case viewScanResult:
 		return m.renderScanResult()
+	case viewCleanConfirm:
+		return m.renderCleanConfirm()
+	case viewCleaning:
+		return m.renderCleaning()
+	case viewCleanDone:
+		return m.renderCleanDone()
 	default:
 		return m.renderHome()
 	}
@@ -539,6 +634,121 @@ func homeShortPath(maxLen int) string {
 		return "..." + home[len(home)-(maxLen-3):]
 	}
 	return home
+}
+
+// ── clean confirm view ────────────────────────────────────────────────────────
+
+func (m AppModel) renderCleanConfirm() string {
+	if !m.caps.Color {
+		var s strings.Builder
+		s.WriteString("\n  diskwhy  clean\n\n")
+		s.WriteString("  This will scan and remove:\n\n")
+		s.WriteString("  · node_modules  (stale or unused)\n")
+		s.WriteString("  · npm / pip / brew / yarn caches\n")
+		s.WriteString("  · git loose object packs\n")
+		s.WriteString("  · compressed logs  (> 7 days)\n\n")
+		s.WriteString("  Y  Proceed    Esc  Cancel\n")
+		if m.cleanErr != "" {
+			s.WriteString("\n  error: " + m.cleanErr + "\n")
+		}
+		return s.String()
+	}
+
+	headerC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	dimC := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	bulletC := lipgloss.NewStyle().Foreground(lipgloss.Color("#60a5fa"))
+	hintKeyC := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e2e2"))
+	roseC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+
+	var s strings.Builder
+	s.WriteString("\n  " + headerC.Render("diskwhy") + dimC.Render("  clean") + "\n\n")
+	s.WriteString("  " + dimC.Render("This will scan and remove:") + "\n\n")
+	for _, line := range []string{
+		"node_modules  (stale or unused)",
+		"npm / pip / brew / yarn caches",
+		"git loose object packs",
+		"compressed logs  (> 7 days)",
+	} {
+		s.WriteString("  " + bulletC.Render("·") + " " + dimC.Render(line) + "\n")
+	}
+	s.WriteString("\n  " +
+		hintKeyC.Render("Y") + dimC.Render(" Proceed") +
+		dimC.Render("   ") +
+		hintKeyC.Render("Esc") + dimC.Render(" Cancel") +
+		"\n")
+	if m.cleanErr != "" {
+		s.WriteString("\n  " + roseC.Render("error: "+m.cleanErr) + "\n")
+	}
+	return s.String()
+}
+
+// ── cleaning view ─────────────────────────────────────────────────────────────
+
+func (m AppModel) renderCleaning() string {
+	label := "Scanning and cleaning..."
+
+	if !m.caps.Color {
+		frame := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+		return fmt.Sprintf("\n\n  %s  %s\n\n  Ctrl+C  Quit\n", frame, label)
+	}
+
+	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	spin := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+
+	frame := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+	return fmt.Sprintf("\n\n  %s  %s\n\n  %s\n",
+		spin.Render(frame),
+		brand.Render(label),
+		dim.Render("Ctrl+C  Quit"),
+	)
+}
+
+// ── clean done view ───────────────────────────────────────────────────────────
+
+func (m AppModel) renderCleanDone() string {
+	var ops, skipped, errCount int
+	for _, r := range m.cleanResults {
+		switch r.Outcome {
+		case clean.OutcomeDeleted, clean.OutcomeTrashed, clean.OutcomeGCRun:
+			ops++
+		case clean.OutcomeSkipped:
+			skipped++
+		case clean.OutcomeError:
+			errCount++
+		}
+	}
+
+	if !m.caps.Color {
+		var s strings.Builder
+		s.WriteString("\n  diskwhy  clean  done\n\n")
+		if m.cleanErr != "" {
+			s.WriteString("  error: " + m.cleanErr + "\n\n")
+		} else if len(m.cleanResults) == 0 {
+			s.WriteString("  Nothing to clean.\n\n")
+		} else {
+			s.WriteString(CleanSummary(m.cleanFreed, ops, skipped, errCount, m.caps) + "\n\n")
+		}
+		s.WriteString("  Press any key to return home\n")
+		return s.String()
+	}
+
+	headerC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	dimC := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	hintKeyC := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e2e2"))
+	roseC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+
+	var s strings.Builder
+	s.WriteString("\n  " + headerC.Render("diskwhy") + dimC.Render("  clean  done") + "\n\n")
+	if m.cleanErr != "" {
+		s.WriteString("  " + roseC.Render("error: "+m.cleanErr) + "\n\n")
+	} else if len(m.cleanResults) == 0 {
+		s.WriteString("  " + dimC.Render("Nothing to clean.") + "\n\n")
+	} else {
+		s.WriteString(CleanSummary(m.cleanFreed, ops, skipped, errCount, m.caps) + "\n\n")
+	}
+	s.WriteString("  " + hintKeyC.Render("any key") + dimC.Render("  Return home") + "\n")
+	return s.String()
 }
 
 // ── scanning view ─────────────────────────────────────────────────────────────
