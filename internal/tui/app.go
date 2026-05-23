@@ -782,13 +782,15 @@ func (m AppModel) renderCleaning() string {
 // ── clean done view ───────────────────────────────────────────────────────────
 
 func (m AppModel) renderCleanDone() string {
-	var ops, skipped, errCount int
+	var ops, skipped, partial, errCount int
 	for _, r := range m.cleanResults {
 		switch r.Outcome {
 		case clean.OutcomeDeleted, clean.OutcomeTrashed, clean.OutcomeGCRun:
 			ops++
 		case clean.OutcomeSkipped:
 			skipped++
+		case clean.OutcomePartial:
+			partial++
 		case clean.OutcomeError:
 			errCount++
 		}
@@ -802,7 +804,7 @@ func (m AppModel) renderCleanDone() string {
 		} else if len(m.cleanResults) == 0 {
 			s.WriteString("  Nothing to clean.\n\n")
 		} else {
-			s.WriteString(CleanSummary(m.cleanFreed, ops, skipped, errCount, m.caps) + "\n\n")
+			s.WriteString(CleanSummary(m.cleanFreed, ops, skipped, partial, errCount, m.caps) + "\n\n")
 		}
 		s.WriteString("  Press any key to return home\n")
 		return s.String()
@@ -820,7 +822,7 @@ func (m AppModel) renderCleanDone() string {
 	} else if len(m.cleanResults) == 0 {
 		s.WriteString("  " + dimC.Render("Nothing to clean.") + "\n\n")
 	} else {
-		s.WriteString(CleanSummary(m.cleanFreed, ops, skipped, errCount, m.caps) + "\n\n")
+		s.WriteString(CleanSummary(m.cleanFreed, ops, skipped, partial, errCount, m.caps) + "\n\n")
 	}
 	s.WriteString("  " + hintKeyC.Render("any key") + dimC.Render("  Return home") + "\n")
 	return s.String()

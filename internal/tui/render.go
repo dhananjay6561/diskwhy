@@ -202,9 +202,16 @@ func ScanSummary(totalBytes, safeBytes int64, caps Caps) string {
 }
 
 // CleanSummary renders the footer line after a clean run.
-func CleanSummary(freedBytes int64, ops, skipped, errCount int, caps Caps) string {
-	if errCount > 0 {
-		line := fmt.Sprintf("  done with %d error(s) — run with --verbose for details", errCount)
+func CleanSummary(freedBytes int64, ops, skipped, partial, errCount int, caps Caps) string {
+	if errCount > 0 || partial > 0 {
+		var line string
+		if errCount > 0 && partial > 0 {
+			line = fmt.Sprintf("  done with %d error(s), %d partial — run with --verbose for details", errCount, partial)
+		} else if errCount > 0 {
+			line = fmt.Sprintf("  done with %d error(s) — run with --verbose for details", errCount)
+		} else {
+			line = fmt.Sprintf("  done with %d partial deletion(s) — cancelled mid-directory", partial)
+		}
 		if !caps.Color {
 			return line
 		}
