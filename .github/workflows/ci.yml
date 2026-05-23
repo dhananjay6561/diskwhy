@@ -45,7 +45,7 @@ jobs:
         run: |
           bad=$(grep -rn "os\.Remove\b\|os\.RemoveAll\b" --include="*.go" . \
             | grep -v "internal/clean/safe\.go:" \
-            | grep -v "_test\.go:")
+            | grep -v "_test\.go:" || true)
           if [ -n "$bad" ]; then
             echo "FAIL: os.Remove/RemoveAll found outside internal/clean/safe.go:"
             echo "$bad"
