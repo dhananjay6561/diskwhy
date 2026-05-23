@@ -75,6 +75,15 @@ func TestIsBlocklistedHome(t *testing.T) {
 	}
 }
 
+func TestIsBlocklistedExport(t *testing.T) {
+	if !IsBlocklisted("/proc/net") {
+		t.Error("exported IsBlocklisted should block /proc/net")
+	}
+	if IsBlocklisted("/home/user/Downloads") {
+		t.Error("exported IsBlocklisted should not block ~/Downloads")
+	}
+}
+
 func TestIsBlocklistedHomeExport(t *testing.T) {
 	if got := IsBlocklistedHome("/proc", "/home/u"); !got {
 		t.Error("exported IsBlocklistedHome should block /proc")
