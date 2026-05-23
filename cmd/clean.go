@@ -12,6 +12,7 @@ import (
 	"github.com/dhananjay6561/diskwhy/internal/docker"
 	"github.com/dhananjay6561/diskwhy/internal/jsonout"
 	"github.com/dhananjay6561/diskwhy/internal/scan"
+	"github.com/dhananjay6561/diskwhy/internal/trash"
 	"github.com/dhananjay6561/diskwhy/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -88,6 +89,35 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	useTrash := flagTrash && !flagNoTrash
 
+	// §6.4 — root execution warning.
+	if !jsonOutput && os.Getuid() == 0 {
+		fmt.Fprint(os.Stdout, "\n  ⚠️  Running as root — blocklist is your only protection. Continue? (y/N): ")
+		sc := bufio.NewScanner(os.Stdin)
+		if !sc.Scan() || strings.TrimSpace(strings.ToLower(sc.Text())) != "y" {
+			fmt.Fprintln(os.Stdout, "  Aborted.")
+			return nil
+		}
+	}
+
+	// §5.5.1 — trash state machine.
+	if useTrash && !trash.Available() {
+		if flagYes {
+			// State 5: --yes + trash unavailable → hard abort, exit 1.
+			return fmt.Errorf("trash unavailable on this system\nFix: re-run with --yes --no-trash to acknowledge permanent deletion")
+		}
+		// State 2: interactive + trash unavailable → warn, prompt for permanent delete.
+		if !jsonOutput {
+			fmt.Fprintln(os.Stdout, "  ⚠️  Trash is unavailable on this system.")
+			fmt.Fprint(os.Stdout, "  Delete permanently instead? (y/N): ")
+			sc := bufio.NewScanner(os.Stdin)
+			if !sc.Scan() || strings.TrimSpace(strings.ToLower(sc.Text())) != "y" {
+				fmt.Fprintln(os.Stdout, "  Aborted.")
+				return nil
+			}
+			useTrash = false
+		}
+	}
+
 	categories := resolveCategories(flagAll, flagNode, flagCache, flagGit, flagLogs)
 	needFileScan := len(categories) > 0
 	needDocker := flagDocker || flagAll
@@ -157,7 +187,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 		}
 
 		if !flagYes {
-			if !confirm(flagAll) {
+			if !confirm(flagAll, flagNoTrash && !flagTrash) {
 				fmt.Fprintln(os.Stdout, "  Aborted.")
 				return nil
 			}
@@ -198,13 +228,13 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return jsonout.WriteClean(os.Stdout, cleanResults, dockerFreed, flagDryRun, useTrash)
 	}
 
-	totalFreed, ops, skipped, errCount := printCleanResults(cleanResults, caps)
+	totalFreed, ops, skipped, partial, errCount := printCleanResults(cleanResults, caps)
 	totalFreed += dockerFreed
 	ops += dockerOps
 	errCount += dockerErrCount
 
 	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout, tui.CleanSummary(totalFreed, ops, skipped, errCount, caps))
+	fmt.Fprintln(os.Stdout, tui.CleanSummary(totalFreed, ops, skipped, partial, errCount, caps))
 
 	return nil
 }
@@ -272,10 +302,14 @@ func printCleanPreview(items []scan.CandidateItem, dockerBytes int64, caps tui.C
 	fmt.Fprintf(os.Stdout, "\n  ~%.1f GB will be freed\n\n", gb)
 }
 
-func confirm(requireYes bool) bool {
-	if requireYes {
+func confirm(requireYes, permanent bool) bool {
+	switch {
+	case requireYes:
 		fmt.Fprint(os.Stdout, "  Type 'yes' to continue: ")
-	} else {
+	case permanent:
+		// State 3: --no-trash without --yes — explicit permanent-delete prompt.
+		fmt.Fprint(os.Stdout, "  ⚠️  Permanent deletion — cannot be undone. Proceed? (y/N): ")
+	default:
 		fmt.Fprint(os.Stdout, "  Proceed? [y/N]: ")
 	}
 
@@ -291,7 +325,7 @@ func confirm(requireYes bool) bool {
 	return answer == "y" || answer == "yes"
 }
 
-func printCleanResults(results []clean.ItemResult, caps tui.Caps) (freed int64, ops, skipped, errCount int) {
+func printCleanResults(results []clean.ItemResult, caps tui.Caps) (freed int64, ops, skipped, partial, errCount int) {
 	for _, r := range results {
 		switch r.Outcome {
 		case clean.OutcomeDeleted:
@@ -303,11 +337,16 @@ func printCleanResults(results []clean.ItemResult, caps tui.Caps) (freed int64, 
 			ops++
 			fmt.Fprintln(os.Stdout, tui.CleanLine("ok", r.Path, "trashed", r.BytesDelta, caps))
 		case clean.OutcomeGCRun:
+			freed += r.BytesDelta
 			ops++
-			fmt.Fprintln(os.Stdout, tui.CleanLine("ok", r.Path, "gc", 0, caps))
+			fmt.Fprintln(os.Stdout, tui.CleanLine("ok", r.Path, "gc", r.BytesDelta, caps))
 		case clean.OutcomeSkipped:
 			skipped++
 			fmt.Fprintln(os.Stdout, tui.CleanLine("skip", r.Path, "skipped", 0, caps))
+		case clean.OutcomePartial:
+			partial++
+			msg := fmt.Sprintf("partial (%d/%d files removed)", r.FilesRemoved, r.FilesTotal)
+			fmt.Fprintln(os.Stderr, tui.CleanLine("error", r.Path, msg, 0, caps))
 		case clean.OutcomeError:
 			errCount++
 			msg := "error"
