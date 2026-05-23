@@ -61,6 +61,7 @@ func Scan(ctx context.Context, cfg Config) (*Result, error) {
 			return nil, fmt.Errorf("resolve scan path %q: %w", cfg.Root, err)
 		}
 		roots = []string{abs}
+		w.explicitRoot = true
 
 	case cfg.Deep:
 		scanMode = "deep"
@@ -114,6 +115,11 @@ type walker struct {
 	goos            string
 	staleDays       int
 	suppressMacCats bool
+	// explicitRoot is set when the caller provided a specific Root path.
+	// In that mode, volatile-path skip checks (alwaysSkip, network mounts)
+	// are bypassed so the scanner fully traverses the requested directory.
+	// The blocklist (isBlocklistedHome) is always enforced regardless.
+	explicitRoot bool
 }
 
 // quickScan checks each well-known category path directly without traversal.
@@ -190,7 +196,7 @@ func (w *walker) deepScan(ctx context.Context, roots []string) ([]CandidateItem,
 
 	var wg sync.WaitGroup
 	for _, root := range roots {
-		if shouldSkip(root, w.home) {
+		if !w.explicitRoot && shouldSkip(root, w.home) {
 			continue
 		}
 		wg.Add(1)
@@ -304,7 +310,7 @@ func (w *walker) walk(
 			continue
 		}
 
-		if shouldSkip(entryPath, w.home) {
+		if !w.explicitRoot && shouldSkip(entryPath, w.home) {
 			continue
 		}
 
