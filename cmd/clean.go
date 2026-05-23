@@ -256,6 +256,7 @@ func printCleanPreview(items []scan.CandidateItem, dockerBytes int64, caps tui.C
 	}
 	totalBytes += dockerBytes
 
+	fmt.Fprintln(os.Stdout, tui.ScanTableHeader(caps))
 	for _, item := range sorted {
 		label := tui.CategoryLabel[item.Category]
 		if label == "" {

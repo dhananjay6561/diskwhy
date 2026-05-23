@@ -179,6 +179,7 @@ func printScanResult(
 		display = sorted[:maxDisplay]
 	}
 
+	fmt.Fprintln(os.Stdout, tui.ScanTableHeader(caps))
 	for _, item := range display {
 		label := tui.CategoryLabel[item.Category]
 		if label == "" {
