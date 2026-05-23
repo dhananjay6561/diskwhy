@@ -338,7 +338,6 @@ func (m AppModel) renderHome() string {
 		versionStr = " v" + m.version
 	}
 	username := homeUsername()
-	homePath := homeShortPath(leftInner - 4)
 	choices := homeChoices()
 
 	if !m.caps.Color {
@@ -350,7 +349,7 @@ func (m AppModel) renderHome() string {
 			topFill = 0
 		}
 		s.WriteString("╭─ " + title + " " + strings.Repeat("─", topFill) + "╮\n")
-		rows := buildHomePlainRows(m, leftInner, rightInner, username, homePath, choices)
+		rows := buildHomePlainRows(m, leftInner, rightInner, username, choices)
 		for _, r := range rows {
 			l := plainPad(r[0], leftInner)
 			ri := plainPad(r[1], rightInner)
@@ -388,9 +387,6 @@ func (m AppModel) renderHome() string {
 		"   Welcome back, " + brandC.Render(username) + "!",
 		dimC.Render("   your disk is full."),
 		dimC.Render("   but why?"),
-		"",
-		dimC.Render("   diskwhy" + versionStr),
-		dimC.Render("   " + homePath),
 		"",
 	}
 
@@ -464,11 +460,7 @@ func homeChoices() [][3]string {
 	}
 }
 
-func buildHomePlainRows(m AppModel, leftW, rightW int, username, homePath string, choices [][3]string) [][2]string {
-	versionStr := ""
-	if m.version != "" {
-		versionStr = " v" + m.version
-	}
+func buildHomePlainRows(m AppModel, leftW, rightW int, username string, choices [][3]string) [][2]string {
 	left := []string{
 		"",
 		"   ┌──────────┐",
@@ -480,9 +472,6 @@ func buildHomePlainRows(m AppModel, leftW, rightW int, username, homePath string
 		"   Welcome back, " + username + "!",
 		"   your disk is full.",
 		"   but why?",
-		"",
-		"   diskwhy" + versionStr,
-		"   " + homePath,
 		"",
 	}
 	right := []string{"", "  Quick start", "  Select an option to get started.", ""}
