@@ -82,6 +82,8 @@ type AppModel struct {
 	scrollTop   int
 
 	// clean flow
+	cleanCursor  int
+	cleanToggle  [4]bool
 	cleanResults []clean.ItemResult
 	cleanFreed   int64
 	cleanErr     string
@@ -189,9 +191,21 @@ func (m AppModel) handleKey(key string) (AppModel, tea.Cmd) {
 		switch key {
 		case "ctrl+c", "q", "Q":
 			return m, tea.Quit
-		case "y", "Y", "enter":
-			return m.startClean()
-		case "n", "N", "esc", "b", "B":
+		case "up", "k":
+			if m.cleanCursor > 0 {
+				m.cleanCursor--
+			}
+		case "down", "j":
+			if m.cleanCursor < 3 {
+				m.cleanCursor++
+			}
+		case " ":
+			m.cleanToggle[m.cleanCursor] = !m.cleanToggle[m.cleanCursor]
+		case "enter":
+			if m.cleanToggle[0] || m.cleanToggle[1] || m.cleanToggle[2] || m.cleanToggle[3] {
+				return m.startClean()
+			}
+		case "esc", "b", "B", "n", "N":
 			m.view = viewHome
 		}
 
@@ -247,13 +261,15 @@ func (m AppModel) startScan(deep bool) (AppModel, tea.Cmd) {
 func (m AppModel) runClean() (AppModel, tea.Cmd) {
 	m.view = viewCleanConfirm
 	m.cleanErr = ""
+	m.cleanCursor = 0
+	m.cleanToggle = [4]bool{true, true, true, true}
 	return m, nil
 }
 
 func (m AppModel) startClean() (AppModel, tea.Cmd) {
 	m.view = viewCleaning
 	m.spinnerFrame = 0
-	return m, tea.Batch(doTick(), doCleanCmd())
+	return m, tea.Batch(doTick(), doCleanCmd(m.cleanToggle))
 }
 
 // ── async commands ─────────────────────────────────────────────────────────────
@@ -289,14 +305,21 @@ func doScanCmd(deep bool) tea.Cmd {
 	}
 }
 
-func doCleanCmd() tea.Cmd {
+func doCleanCmd(toggle [4]bool) tea.Cmd {
 	return func() tea.Msg {
 		home, _ := os.UserHomeDir()
-		categories := []string{
-			scan.CatNodeModules,
-			scan.CatBrewCache, scan.CatPipCache, scan.CatNpmCache,
-			scan.CatAptCache, scan.CatXcodeDerived, scan.CatPycache,
-			scan.CatGitObjects, scan.CatLogs, scan.CatJournald,
+		var categories []string
+		if toggle[0] {
+			categories = append(categories, scan.CatNodeModules)
+		}
+		if toggle[1] {
+			categories = append(categories, scan.CatBrewCache, scan.CatPipCache, scan.CatNpmCache, scan.CatAptCache, scan.CatXcodeDerived, scan.CatPycache)
+		}
+		if toggle[2] {
+			categories = append(categories, scan.CatGitObjects)
+		}
+		if toggle[3] {
+			categories = append(categories, scan.CatLogs, scan.CatJournald)
 		}
 		catSet := make(map[string]bool)
 		for _, c := range categories {
@@ -638,16 +661,36 @@ func homeShortPath(maxLen int) string {
 
 // ── clean confirm view ────────────────────────────────────────────────────────
 
+var cleanCategories = [4][2]string{
+	{"node_modules", "stale or unused project folders"},
+	{"caches", "npm, pip, brew, yarn, xcode derived"},
+	{"git objects", "loose pack files  (git gc)"},
+	{"logs", "compressed logs older than 7 days"},
+}
+
 func (m AppModel) renderCleanConfirm() string {
+	anySelected := m.cleanToggle[0] || m.cleanToggle[1] || m.cleanToggle[2] || m.cleanToggle[3]
+
 	if !m.caps.Color {
 		var s strings.Builder
 		s.WriteString("\n  diskwhy  clean\n\n")
-		s.WriteString("  This will scan and remove:\n\n")
-		s.WriteString("  · node_modules  (stale or unused)\n")
-		s.WriteString("  · npm / pip / brew / yarn caches\n")
-		s.WriteString("  · git loose object packs\n")
-		s.WriteString("  · compressed logs  (> 7 days)\n\n")
-		s.WriteString("  Y  Proceed    Esc  Cancel\n")
+		s.WriteString("  Select categories to clean:\n\n")
+		for i, cat := range cleanCategories {
+			pfx := "     "
+			if m.cleanCursor == i {
+				pfx = "  ►  "
+			}
+			box := "[ ]"
+			if m.cleanToggle[i] {
+				box = "[x]"
+			}
+			s.WriteString(pfx + box + "  " + plainPad(cat[0], 14) + cat[1] + "\n")
+		}
+		s.WriteString("\n  Space Toggle    Enter Proceed")
+		if !anySelected {
+			s.WriteString("  (select at least one)")
+		}
+		s.WriteString("    Esc Cancel\n")
 		if m.cleanErr != "" {
 			s.WriteString("\n  error: " + m.cleanErr + "\n")
 		}
@@ -656,26 +699,58 @@ func (m AppModel) renderCleanConfirm() string {
 
 	headerC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
 	dimC := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
-	bulletC := lipgloss.NewStyle().Foreground(lipgloss.Color("#60a5fa"))
 	hintKeyC := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e2e2"))
 	roseC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+	cursorC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	checkOnC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	checkOffC := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	activeLabelC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f1f5f9")).Bold(true)
+	activeDescC := lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8"))
+	inactiveLabelC := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	inactiveDescC := lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
+	warnC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b"))
 
 	var s strings.Builder
 	s.WriteString("\n  " + headerC.Render("diskwhy") + dimC.Render("  clean") + "\n\n")
-	s.WriteString("  " + dimC.Render("This will scan and remove:") + "\n\n")
-	for _, line := range []string{
-		"node_modules  (stale or unused)",
-		"npm / pip / brew / yarn caches",
-		"git loose object packs",
-		"compressed logs  (> 7 days)",
-	} {
-		s.WriteString("  " + bulletC.Render("·") + " " + dimC.Render(line) + "\n")
+	s.WriteString("  " + dimC.Render("Select categories to clean:") + "\n\n")
+
+	for i, cat := range cleanCategories {
+		active := m.cleanCursor == i
+		var pfx string
+		if active {
+			pfx = "  " + cursorC.Render("► ") + " "
+		} else {
+			pfx = "      "
+		}
+		var box string
+		if m.cleanToggle[i] {
+			box = checkOnC.Render("[✓]")
+		} else {
+			box = checkOffC.Render("[ ]")
+		}
+		var label, desc string
+		if active {
+			label = activeLabelC.Render(plainPad(cat[0], 14))
+			desc = activeDescC.Render(cat[1])
+		} else {
+			label = inactiveLabelC.Render(plainPad(cat[0], 14))
+			desc = inactiveDescC.Render(cat[1])
+		}
+		s.WriteString(pfx + box + "  " + label + "  " + desc + "\n")
 	}
+
 	s.WriteString("\n  " +
-		hintKeyC.Render("Y") + dimC.Render(" Proceed") +
+		hintKeyC.Render("↑ ↓") + dimC.Render(" Move") +
+		dimC.Render("   ") +
+		hintKeyC.Render("Space") + dimC.Render(" Toggle") +
+		dimC.Render("   ") +
+		hintKeyC.Render("Enter") + dimC.Render(" Proceed") +
 		dimC.Render("   ") +
 		hintKeyC.Render("Esc") + dimC.Render(" Cancel") +
 		"\n")
+	if !anySelected {
+		s.WriteString("  " + warnC.Render("select at least one category") + "\n")
+	}
 	if m.cleanErr != "" {
 		s.WriteString("\n  " + roseC.Render("error: "+m.cleanErr) + "\n")
 	}
