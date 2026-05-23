@@ -66,10 +66,10 @@ func TestAnsiPad_noTruncate(t *testing.T) {
 
 func TestHomeChoices(t *testing.T) {
 	choices := homeChoices()
-	if len(choices) != 4 {
-		t.Fatalf("homeChoices len = %d, want 4", len(choices))
+	if len(choices) != 3 {
+		t.Fatalf("homeChoices len = %d, want 3", len(choices))
 	}
-	wantKeys := []string{"1", "2", "3", "4"}
+	wantKeys := []string{"1", "2", "3"}
 	for i, c := range choices {
 		if c[0] != wantKeys[i] {
 			t.Errorf("choice[%d] key = %q, want %q", i, c[0], wantKeys[i])
@@ -243,12 +243,11 @@ func TestRenderScanning_shallow(t *testing.T) {
 	}
 }
 
-func TestRenderScanning_deep(t *testing.T) {
+func TestRenderScanning_label(t *testing.T) {
 	m := NewAppModel("", plainCaps())
-	m.deep = true
 	out := m.renderScanning()
-	if !strings.Contains(out, "Deep") {
-		t.Error("deep renderScanning should mention Deep")
+	if !strings.Contains(out, "15s") {
+		t.Error("renderScanning should mention expected duration")
 	}
 }
 
@@ -495,7 +494,6 @@ func TestHandleKey_home_upDown(t *testing.T) {
 	if m3.cursor != 0 {
 		t.Errorf("up from 1: cursor = %d, want 0", m3.cursor)
 	}
-	_, _ = m3.handleKey("up") // at 0, should not go below
 	m4 := m
 	m4.cursor = 0
 	m5, _ := m4.handleKey("up")
@@ -503,10 +501,10 @@ func TestHandleKey_home_upDown(t *testing.T) {
 		t.Error("up at 0 should stay at 0")
 	}
 	m6 := m
-	m6.cursor = 3
+	m6.cursor = 2
 	m7, _ := m6.handleKey("down")
-	if m7.cursor != 3 {
-		t.Error("down at 3 should stay at 3")
+	if m7.cursor != 2 {
+		t.Error("down at 2 should stay at 2")
 	}
 }
 
@@ -533,12 +531,8 @@ func TestHandleKey_home_numberKeys(t *testing.T) {
 		t.Errorf("key '1' should start scan, got view %d", m2.view)
 	}
 	m3, _ := m.handleKey("2")
-	if m3.view != viewScanning || !m3.deep {
-		t.Errorf("key '2' should start deep scan, view=%d deep=%v", m3.view, m3.deep)
-	}
-	m4, _ := m.handleKey("3")
-	if m4.view != viewCleanConfirm {
-		t.Errorf("key '3' should open clean confirm, got view %d", m4.view)
+	if m3.view != viewCleanConfirm {
+		t.Errorf("key '2' should open clean confirm, got view %d", m3.view)
 	}
 }
 
@@ -550,10 +544,10 @@ func TestHandleKey_home_enter(t *testing.T) {
 	if m2.view != viewScanning {
 		t.Errorf("enter on cursor=0 should scan, got view %d", m2.view)
 	}
-	m.cursor = 2
+	m.cursor = 1
 	m3, _ := m.handleKey("enter")
 	if m3.view != viewCleanConfirm {
-		t.Errorf("enter on cursor=2 should open clean confirm, got view %d", m3.view)
+		t.Errorf("enter on cursor=1 should open clean confirm, got view %d", m3.view)
 	}
 }
 
@@ -803,19 +797,15 @@ func TestRunClean(t *testing.T) {
 
 func TestStartScan(t *testing.T) {
 	m := NewAppModel("", plainCaps())
-	m2, cmd := m.startScan(false)
+	m2, cmd := m.startScan(true)
 	if m2.view != viewScanning {
 		t.Errorf("startScan view = %d, want viewScanning", m2.view)
 	}
-	if m2.deep {
-		t.Error("startScan(false) should not set deep")
+	if !m2.deep {
+		t.Error("startScan(true) should set deep=true")
 	}
 	if cmd == nil {
 		t.Error("startScan should return a command")
-	}
-	m3, _ := m.startScan(true)
-	if !m3.deep {
-		t.Error("startScan(true) should set deep=true")
 	}
 }
 

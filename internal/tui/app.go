@@ -158,26 +158,22 @@ func (m AppModel) handleKey(key string) (AppModel, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < 3 {
+			if m.cursor < 2 {
 				m.cursor++
 			}
 		case "1":
-			return m.startScan(false)
-		case "2":
 			return m.startScan(true)
-		case "3":
+		case "2":
 			return m.runClean()
-		case "4":
+		case "3":
 			return m, tea.Quit
 		case "enter", " ":
 			switch m.cursor {
 			case 0:
-				return m.startScan(false)
-			case 1:
 				return m.startScan(true)
-			case 2:
+			case 1:
 				return m.runClean()
-			case 3:
+			case 2:
 				return m, tea.Quit
 			}
 		}
@@ -571,10 +567,9 @@ func (m AppModel) renderHome() string {
 
 func homeChoices() [][3]string {
 	return [][3]string{
-		{"1", "Scan", "Find space hogs on your disk"},
-		{"2", "Deep Scan", "Full recursive scan  (~15s)"},
-		{"3", "Clean", "Remove found junk safely"},
-		{"4", "Quit", "Exit diskwhy"},
+		{"1", "Scan", "Full recursive scan of your disk"},
+		{"2", "Clean", "Remove found junk safely"},
+		{"3", "Quit", "Exit diskwhy"},
 	}
 }
 
@@ -831,10 +826,7 @@ func (m AppModel) renderCleanDone() string {
 // ── scanning view ─────────────────────────────────────────────────────────────
 
 func (m AppModel) renderScanning() string {
-	label := "Scanning your disk..."
-	if m.deep {
-		label = "Deep scanning your disk  (~15s)..."
-	}
+	label := "Scanning your disk  (~15s)..."
 
 	if !m.caps.Color {
 		frame := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
