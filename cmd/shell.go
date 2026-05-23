@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -136,58 +135,29 @@ func runShellClean(parent *cobra.Command, args []string) error {
 }
 
 type shellUI struct {
-	title  lipgloss.Style
-	logo   lipgloss.Style
-	sub    lipgloss.Style
-	box    lipgloss.Style
-	prompt lipgloss.Style
-	good   lipgloss.Style
-	bad    lipgloss.Style
-	info   lipgloss.Style
+	prompt  lipgloss.Style
+	good    lipgloss.Style
+	bad     lipgloss.Style
+	info    lipgloss.Style
+	noColor bool
 }
 
 func newShellUI(noColor bool) shellUI {
 	if noColor {
 		return shellUI{
-			title:  lipgloss.NewStyle().Bold(true),
-			logo:   lipgloss.NewStyle().Bold(true),
-			sub:    lipgloss.NewStyle(),
-			box:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2),
-			prompt: lipgloss.NewStyle().Bold(true),
-			good:   lipgloss.NewStyle(),
-			bad:    lipgloss.NewStyle(),
-			info:   lipgloss.NewStyle(),
+			prompt:  lipgloss.NewStyle().Bold(true),
+			good:    lipgloss.NewStyle(),
+			bad:     lipgloss.NewStyle(),
+			info:    lipgloss.NewStyle(),
+			noColor: true,
 		}
 	}
-
-	if isDarkTerminal() {
-		return shellUI{
-			title: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")),
-			logo:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")),
-			sub:   lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
-			box: lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("63")).
-				Padding(1, 2),
-			prompt: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")),
-			good:   lipgloss.NewStyle().Foreground(lipgloss.Color("78")),
-			bad:    lipgloss.NewStyle().Foreground(lipgloss.Color("203")),
-			info:   lipgloss.NewStyle().Foreground(lipgloss.Color("117")),
-		}
-	}
-
 	return shellUI{
-		title: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("25")),
-		logo:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("28")),
-		sub:   lipgloss.NewStyle().Foreground(lipgloss.Color("24")),
-		box: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("27")).
-			Padding(1, 2),
-		prompt: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("24")),
-		good:   lipgloss.NewStyle().Foreground(lipgloss.Color("28")),
-		bad:    lipgloss.NewStyle().Foreground(lipgloss.Color("160")),
-		info:   lipgloss.NewStyle().Foreground(lipgloss.Color("31")),
+		prompt:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#22c55e")),
+		good:    lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")),
+		bad:     lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171")),
+		info:    lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8")),
+		noColor: false,
 	}
 }
 
@@ -197,136 +167,50 @@ func (u shellUI) clearScreen() {
 
 func (u shellUI) renderHome(version string) {
 	u.clearScreen()
-	width := terminalWidth()
-	logo := diskwhyASCIIWide()
-	buddy := diskBuddyASCII()
-	if width < 130 {
-		logo = diskwhyASCIICompact()
+
+	if u.noColor {
+		fmt.Fprintln(os.Stdout, "\n  diskwhy  ·  your disk is full. but why?")
+		if version != "" {
+			fmt.Fprintf(os.Stdout, "  v%s\n", version)
+		}
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout, "  /scan   [--deep] [--path <dir>]")
+		fmt.Fprintln(os.Stdout, "  /clean  [--all] [--node] [--cache] [--git] [--logs] [--dry-run] [--yes]")
+		fmt.Fprintln(os.Stdout, "  /help  ·  /version  ·  /clear  ·  /exit")
+		fmt.Fprintln(os.Stdout)
+		return
 	}
-	if width < 90 {
-		buddy = "Disk Buddy says: type /scan to start"
+
+	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	cmd := lipgloss.NewStyle().Foreground(lipgloss.Color("#f1f5f9"))
+
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintf(os.Stdout, "  %s%s", brand.Render("disk"), "why")
+	if version != "" {
+		fmt.Fprintf(os.Stdout, "  %s", dim.Render("v"+version))
 	}
-
-	banner := strings.Join([]string{
-		u.logo.Render(logo),
-		u.sub.Render("Your disk is full. But why?"),
-		u.sub.Render("Made by DJ"),
-		u.info.Render(buddy),
-		u.info.Render("Version: " + version),
-	}, "\n")
-
-	menu := strings.Join([]string{
-		"Commands:",
-		"  /scan [--deep] [--path <dir>]",
-		"  /clean [--all|--node|--cache|--git|--logs] [--dry-run] [--trash] [--yes]",
-		"  /version    /help    /home    /clear    /exit",
-		"",
-		"Try now:",
-		"  /scan --deep --path /Users/dj",
-	}, "\n")
-
-	fmt.Fprintln(os.Stdout, u.responsiveBox().Render(banner+"\n\n"+menu))
+	fmt.Fprintln(os.Stdout, "  "+dim.Render("·")+"  "+dim.Render("your disk is full. but why?"))
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, cmd.Render("  /scan   [--deep] [--path <dir>]"))
+	fmt.Fprintln(os.Stdout, cmd.Render("  /clean  [--all] [--node] [--cache] [--git] [--logs] [--dry-run] [--yes]"))
+	fmt.Fprintln(os.Stdout, dim.Render("  /help  ·  /version  ·  /clear  ·  /exit"))
+	fmt.Fprintln(os.Stdout)
 }
 
 func (u shellUI) renderHelp() {
-	help := strings.Join([]string{
-		"Slash commands:",
-		"  /scan [--deep] [--path <dir>]  Run scan",
-		"  /clean [flags]                 Run clean",
-		"  /version                       Show version",
-		"  /home                          Show branded home screen",
-		"  /clear                         Clear terminal",
-		"  /help                          Show help",
-		"  /exit                          Quit shell",
-		"",
-		"Examples:",
-		"  /scan",
-		"  /scan --deep --path /Users/dj",
-		"  /clean --all --dry-run --yes",
-	}, "\n")
-	fmt.Fprintln(os.Stdout, u.responsiveBox().Render(help))
-}
-
-func (u shellUI) responsiveBox() lipgloss.Style {
-	b := u.box
-	width := terminalWidth()
-	contentWidth := width - b.GetHorizontalFrameSize()
-	if contentWidth < 48 {
-		return b
+	if u.noColor {
+		fmt.Fprintln(os.Stdout, "\n  /scan   [--deep] [--path <dir>]")
+		fmt.Fprintln(os.Stdout, "  /clean  [--all] [--node] [--cache] [--git] [--logs] [--dry-run] [--yes]")
+		fmt.Fprintln(os.Stdout, "  /version  /home  /clear  /help  /exit")
+		return
 	}
-	return b.Width(contentWidth)
-}
 
-func terminalWidth() int {
-	if col := os.Getenv("COLUMNS"); col != "" {
-		if v, err := strconv.Atoi(col); err == nil && v > 0 {
-			return v
-		}
-	}
-	return 120
-}
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	cmd := lipgloss.NewStyle().Foreground(lipgloss.Color("#f1f5f9"))
 
-func isDarkTerminal() bool {
-	v := strings.TrimSpace(os.Getenv("COLORFGBG"))
-	if v == "" {
-		return true
-	}
-	parts := strings.Split(v, ";")
-	bgStr := strings.TrimSpace(parts[len(parts)-1])
-	bg, err := strconv.Atoi(bgStr)
-	if err != nil {
-		return true
-	}
-	if bg >= 0 && bg <= 7 {
-		return true
-	}
-	if bg >= 15 {
-		return false
-	}
-	return true
-}
-
-func diskwhyASCIIWide() string {
-	return strings.TrimSpace(`
-/$$$$$$$  /$$$$$$  /$$$$$$  /$$   /$$ /$$      /$$ /$$   /$$ /$$     /$$        /$$$$$$  /$$       /$$$$$$
-| $$__  $$|_  $$_/ /$$__  $$| $$  /$$/| $$  /$ | $$| $$  | $$|  $$   /$$/       /$$__  $$| $$      |_  $$_/
-| $$  \ $$  | $$  | $$  \__/| $$ /$$/ | $$ /$$$| $$| $$  | $$ \  $$ /$$/       | $$  \__/| $$        | $$
-| $$  | $$  | $$  |  $$$$$$ | $$$$$/  | $$/$$ $$ $$| $$$$$$$$  \  $$$$/        | $$      | $$        | $$
-| $$  | $$  | $$   \____  $$| $$  $$  | $$$$_  $$$$| $$__  $$   \  $$/         | $$      | $$        | $$
-| $$  | $$  | $$   /$$  \ $$| $$\  $$ | $$$/ \  $$$| $$  | $$    | $$          | $$    $$| $$        | $$
-| $$$$$$$/ /$$$$$$|  $$$$$$/| $$ \  $$| $$/   \  $$| $$  | $$    | $$          |  $$$$$$/| $$$$$$$$ /$$$$$$
-|_______/ |______/ \______/ |__/  \__/|__/     \__/|__/  |__/    |__/           \______/ |________/|______/
-`)
-}
-
-
-func diskwhyASCIICompact() string {
-	return strings.TrimSpace(`
-/$$$$$$$  /$$$$$$  /$$$$$$  /$$   /$$
-| $$__  $$|_  $$_/ /$$__  $$| $$  /$$/
-| $$  \ $$  | $$  | $$  \__/| $$ /$$/
-| $$  | $$  | $$  |  $$$$$$ | $$$$$/
-| $$  | $$  | $$   \____  $$| $$  $$
-| $$  | $$  | $$   /$$  \ $$| $$\  $$
-| $$$$$$$/ /$$$$$$|  $$$$$$/| $$ \  $$
-|_______/ |______/ \______/ |__/  \__/
-
-/$$      /$$ /$$   /$$ /$$     /$$
-| $$  /$ | $$| $$  | $$|  $$   /$$/
-| $$ /$$$| $$| $$  | $$ \  $$ /$$/
-| $$/$$ $$ $$| $$$$$$$$  \  $$$$/
-| $$$$_  $$$$| $$__  $$   \  $$/
-| $$$/ \  $$$| $$  | $$    | $$
-| $$/   \  $$| $$  | $$    | $$
-|__/     \__/|__/  |__/    |__/`)
-}
-
-func diskBuddyASCII() string {
-	return strings.TrimSpace(`
-  .-.
- (o o)   Disk Buddy says: type /scan to start
- | O \
-  \   \
-   '~~~'
-`)
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, cmd.Render("  /scan   [--deep] [--path <dir>]"))
+	fmt.Fprintln(os.Stdout, cmd.Render("  /clean  [--all] [--node] [--cache] [--git] [--logs] [--dry-run] [--yes]"))
+	fmt.Fprintln(os.Stdout, dim.Render("  /version  /home  /clear  /help  /exit"))
 }
