@@ -54,3 +54,7 @@ func isBlocklistedHome(path, home string) bool {
 
 // IsBlocklistedHome is the exported variant used by the clean package.
 func IsBlocklistedHome(path, home string) bool { return isBlocklistedHome(path, home) }
+
+// IsBlocklisted is the exported absolute-path-only variant used by safeRemove
+// for its independent Layer 2 syscall-site re-validation (PRD §6.2).
+func IsBlocklisted(path string) bool { return isBlocklisted(path) }
