@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -82,12 +83,11 @@ func runClean(cmd *cobra.Command, args []string) error {
 	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
 	caps := tui.Detect(noColor || noColorFlag)
 	if jsonOutput {
-		flagYes = true // non-interactive when emitting JSON
+		flagYes = true
 	}
 
 	useTrash := flagTrash && !flagNoTrash
 
-	// Resolve which categories to clean.
 	categories := resolveCategories(flagAll, flagNode, flagCache, flagGit, flagLogs)
 	needFileScan := len(categories) > 0
 	needDocker := flagDocker || flagAll
@@ -98,10 +98,8 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	home, _ := os.UserHomeDir()
 
-	// Lower I/O priority for the re-scan.
 	_ = syscall.Setpriority(syscall.PRIO_PROCESS, 0, 10)
 
-	// Re-scan to get fresh candidates.
 	var scanItems []scan.CandidateItem
 	if needFileScan {
 		spinnerCaps := caps
@@ -126,7 +124,6 @@ func runClean(cmd *cobra.Command, args []string) error {
 		scanItems = result.Items
 	}
 
-	// Build candidate list filtered to requested categories.
 	var toClean []scan.CandidateItem
 	catSet := make(map[string]bool, len(categories))
 	for _, c := range categories {
@@ -138,7 +135,6 @@ func runClean(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Docker query.
 	var dockerFreeable int64
 	if needDocker {
 		dResult, _ := docker.Query(ctx, home, verbose)
@@ -154,7 +150,6 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	if !jsonOutput {
-		// Show preview and confirm only for interactive (non-JSON) output.
 		printCleanPreview(toClean, dockerFreeable, caps, flagDryRun)
 
 		if flagDryRun {
@@ -169,7 +164,6 @@ func runClean(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Clean file-system items.
 	var cleanResults []clean.ItemResult
 	if len(toClean) > 0 {
 		cleanCfg := clean.Config{
@@ -182,17 +176,18 @@ func runClean(cmd *cobra.Command, args []string) error {
 		cleanResults = clean.Run(ctx, cleanCfg, toClean)
 	}
 
-	// Docker prune.
 	var dockerFreed int64
+	var dockerOps, dockerErrCount int
 	if needDocker && dockerFreeable > 0 && !flagDryRun {
 		var dockerErr error
 		dockerFreed, dockerErr = docker.PruneUnused(ctx, home, false, verbose)
 		if !jsonOutput {
 			if dockerErr != nil {
-				fmt.Fprintf(os.Stderr, "  docker prune failed: %s\n", dockerErr)
+				dockerErrCount++
+				fmt.Fprintln(os.Stderr, tui.CleanLine("error", "docker images & volumes", dockerErr.Error(), 0, caps))
 			} else {
-				gb := float64(dockerFreed) / (1 << 30)
-				fmt.Fprintf(os.Stdout, "  Docker: freed %.1f GB\n", gb)
+				dockerOps++
+				fmt.Fprintln(os.Stdout, tui.CleanLine("ok", "docker images & volumes", "pruned", dockerFreed, caps))
 			}
 		}
 	} else if flagDryRun && needDocker {
@@ -203,21 +198,17 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return jsonout.WriteClean(os.Stdout, cleanResults, dockerFreed, flagDryRun, useTrash)
 	}
 
-	totalFreed, errCount := printCleanResults(cleanResults, caps)
+	totalFreed, ops, skipped, errCount := printCleanResults(cleanResults, caps)
 	totalFreed += dockerFreed
+	ops += dockerOps
+	errCount += dockerErrCount
 
 	fmt.Fprintln(os.Stdout)
-	if errCount > 0 {
-		fmt.Fprintf(os.Stdout, "  Done with %d error(s). Run with --verbose for details.\n", errCount)
-	} else {
-		gb := float64(totalFreed) / (1 << 30)
-		fmt.Fprintf(os.Stdout, "  Done. Freed ~%.1f GB.\n", gb)
-	}
+	fmt.Fprintln(os.Stdout, tui.CleanSummary(totalFreed, ops, skipped, errCount, caps))
 
 	return nil
 }
 
-// resolveCategories maps flag booleans to category name slices.
 func resolveCategories(all, node, cache, git, logs bool) []string {
 	var cats []string
 	add := func(c ...string) { cats = append(cats, c...) }
@@ -240,68 +231,46 @@ func resolveCategories(all, node, cache, git, logs bool) []string {
 	return cats
 }
 
-// printCleanPreview shows what would be cleaned.
 func printCleanPreview(items []scan.CandidateItem, dockerBytes int64, caps tui.Caps, isDryRun bool) {
-	mode := "Preview"
+	mode := "preview"
 	if isDryRun {
-		mode = "Dry Run"
+		mode = "dry-run"
 	}
+	fmt.Fprintf(os.Stdout, "\n  diskwhy  clean  %s\n\n", mode)
 
-	disk := "💽"
-	if !caps.Emoji {
-		disk = "[disk]"
-	}
-	fmt.Fprintf(os.Stdout, "\n%s  diskwhy — Clean %s\n\n", disk, mode)
+	sorted := make([]scan.CandidateItem, len(items))
+	copy(sorted, items)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].SizeBytes > sorted[j].SizeBytes
+	})
 
-	// Aggregate by category.
-	type agg struct {
-		total int64
-		count int
-	}
-	byCategory := make(map[string]*agg)
-	var order []string
-	for _, item := range items {
-		a, ok := byCategory[item.Category]
-		if !ok {
-			a = &agg{}
-			byCategory[item.Category] = a
-			order = append(order, item.Category)
+	var maxBytes, totalBytes int64
+	for _, item := range sorted {
+		if item.SizeBytes > maxBytes {
+			maxBytes = item.SizeBytes
 		}
-		a.total += item.SizeBytes
-		a.count++
-	}
-
-	var maxBytes int64
-	for _, cat := range order {
-		if v := byCategory[cat].total; v > maxBytes {
-			maxBytes = v
-		}
+		totalBytes += item.SizeBytes
 	}
 	if dockerBytes > maxBytes {
 		maxBytes = dockerBytes
 	}
+	totalBytes += dockerBytes
 
-	var totalBytes int64
-	for _, cat := range order {
-		a := byCategory[cat]
-		label := tui.CategoryLabel[cat]
+	for _, item := range sorted {
+		label := tui.CategoryLabel[item.Category]
 		if label == "" {
-			label = cat
+			label = item.Category
 		}
-		emoji := tui.CategoryEmoji[cat]
-		fmt.Fprintln(os.Stdout, tui.CategoryLine(label, emoji, a.total, maxBytes, a.count, "", caps))
-		totalBytes += a.total
+		fmt.Fprintln(os.Stdout, tui.ItemLine(label, item.Path, item.SizeBytes, maxBytes, item.StalenessScore, "", caps))
 	}
 	if dockerBytes > 0 {
-		fmt.Fprintln(os.Stdout, tui.CategoryLine("Docker (unused)", "🐳", dockerBytes, maxBytes, 1, "", caps))
-		totalBytes += dockerBytes
+		fmt.Fprintln(os.Stdout, tui.ItemLine("docker", "images & volumes", dockerBytes, maxBytes, scan.StalenessUnused, "", caps))
 	}
 
 	gb := float64(totalBytes) / (1 << 30)
-	fmt.Fprintf(os.Stdout, "\n  ~%.1f GB to be freed\n\n", gb)
+	fmt.Fprintf(os.Stdout, "\n  ~%.1f GB will be freed\n\n", gb)
 }
 
-// confirm asks the user to type "yes" for --all operations, or y/n otherwise.
 func confirm(requireYes bool) bool {
 	if requireYes {
 		fmt.Fprint(os.Stdout, "  Type 'yes' to continue: ")
@@ -321,40 +290,31 @@ func confirm(requireYes bool) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// printCleanResults prints one line per result and returns (bytesFreed, errCount).
-func printCleanResults(results []clean.ItemResult, caps tui.Caps) (int64, int) {
-	var freed int64
-	var errCount int
-
+func printCleanResults(results []clean.ItemResult, caps tui.Caps) (freed int64, ops, skipped, errCount int) {
 	for _, r := range results {
 		switch r.Outcome {
 		case clean.OutcomeDeleted:
-			gb := float64(r.BytesDelta) / (1 << 30)
 			freed += r.BytesDelta
-			fmt.Fprintf(os.Stdout, "  deleted  %-50s  %.1f GB\n", truncate(r.Path, 50), gb)
+			ops++
+			fmt.Fprintln(os.Stdout, tui.CleanLine("ok", r.Path, "deleted", r.BytesDelta, caps))
 		case clean.OutcomeTrashed:
 			freed += r.BytesDelta
-			fmt.Fprintf(os.Stdout, "  trashed  %-50s\n", truncate(r.Path, 50))
+			ops++
+			fmt.Fprintln(os.Stdout, tui.CleanLine("ok", r.Path, "trashed", r.BytesDelta, caps))
 		case clean.OutcomeGCRun:
-			fmt.Fprintf(os.Stdout, "  git gc   %-50s\n", truncate(r.Path, 50))
+			ops++
+			fmt.Fprintln(os.Stdout, tui.CleanLine("ok", r.Path, "gc", 0, caps))
 		case clean.OutcomeSkipped:
-			if caps.Emoji {
-				fmt.Fprintf(os.Stdout, "  ⏭  skipped  %s\n", truncate(r.Path, 50))
-			} else {
-				fmt.Fprintf(os.Stdout, "  skipped  %s\n", truncate(r.Path, 50))
-			}
+			skipped++
+			fmt.Fprintln(os.Stdout, tui.CleanLine("skip", r.Path, "skipped", 0, caps))
 		case clean.OutcomeError:
 			errCount++
-			fmt.Fprintf(os.Stderr, "  error    %s: %s\n", truncate(r.Path, 40), r.Err)
+			msg := "error"
+			if r.Err != nil {
+				msg = r.Err.Error()
+			}
+			fmt.Fprintln(os.Stderr, tui.CleanLine("error", r.Path, msg, 0, caps))
 		}
 	}
-	return freed, errCount
+	return
 }
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return "..." + s[len(s)-(max-3):]
-}
-
