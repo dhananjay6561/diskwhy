@@ -60,7 +60,6 @@ func runScan(cmd *cobra.Command, args []string) error {
 	noColorFlag, _ := cmd.Root().PersistentFlags().GetBool("no-color")
 	caps := tui.Detect((noColor || noColorFlag) && !jsonOutput)
 
-	// Lower process priority so the scan does not affect the user's session.
 	_ = syscall.Setpriority(syscall.PRIO_PROCESS, 0, 10)
 
 	cfg := scan.Config{
@@ -76,7 +75,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 	spinnerCaps := caps
 	if jsonOutput {
-		spinnerCaps.IsTTY = false // suppress spinner when emitting JSON
+		spinnerCaps.IsTTY = false
 	}
 	stopSpinner := tui.StartSpinner(label, spinnerCaps)
 
@@ -113,7 +112,6 @@ func runScan(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// printScanResult renders the full scan output using the TUI package.
 func printScanResult(
 	result *scan.Result,
 	dockerResult *docker.Result,
@@ -134,86 +132,75 @@ func printScanResult(
 			result.ScanMode, elapsed.Seconds())
 	}
 
-	if len(result.Items) == 0 {
+	var dockerTotal int64
+	if dockerResult != nil {
+		dockerTotal = dockerResult.UnusedImageBytes + dockerResult.UsedImageBytes + dockerResult.VolumeBytes
+	}
+
+	if len(result.Items) == 0 && dockerTotal == 0 {
 		fmt.Fprintln(os.Stdout, "  Nothing significant found.")
 		fmt.Fprintln(os.Stdout, "  Run diskwhy scan --deep for a full recursive scan.")
 		return
 	}
 
-	// Aggregate multiple items of the same category (e.g. many node_modules dirs).
-	type agg struct {
-		total     int64
-		count     int
-		staleness scan.StalenessLevel
-	}
-	byCategory := make(map[string]*agg)
-	var order []string
-
-	for _, item := range result.Items {
-		a, ok := byCategory[item.Category]
-		if !ok {
-			a = &agg{staleness: item.StalenessScore}
-			byCategory[item.Category] = a
-			order = append(order, item.Category)
-		}
-		a.total += item.SizeBytes
-		a.count++
-		if item.StalenessScore > a.staleness {
-			a.staleness = item.StalenessScore
-		}
-	}
-
-	// Sort by total size descending.
-	sort.Slice(order, func(i, j int) bool {
-		return byCategory[order[i]].total > byCategory[order[j]].total
+	sorted := make([]scan.CandidateItem, len(result.Items))
+	copy(sorted, result.Items)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].SizeBytes > sorted[j].SizeBytes
 	})
 
-	// Compute max for proportional bar scaling.
 	var maxBytes int64
-	for _, cat := range order {
-		if v := byCategory[cat].total; v > maxBytes {
-			maxBytes = v
+	for _, item := range sorted {
+		if item.SizeBytes > maxBytes {
+			maxBytes = item.SizeBytes
 		}
 	}
+	if dockerTotal > maxBytes {
+		maxBytes = dockerTotal
+	}
 
-	// Include Docker total in maxBytes computation so bars scale correctly.
-	var dockerTotal int64
+	var totalFound, safeBytes int64
+	for _, item := range sorted {
+		totalFound += item.SizeBytes
+		if item.StalenessScore == scan.StalenessStale || item.StalenessScore == scan.StalenessUnused {
+			safeBytes += item.SizeBytes
+		}
+	}
+	totalFound += dockerTotal
 	if dockerResult != nil {
-		dockerTotal = dockerResult.UnusedImageBytes + dockerResult.UsedImageBytes + dockerResult.VolumeBytes
-		if dockerTotal > maxBytes {
-			maxBytes = dockerTotal
-		}
-	}
-
-	var safeBytes int64
-	for _, cat := range order {
-		a := byCategory[cat]
-		label := tui.CategoryLabel[cat]
-		if label == "" {
-			label = cat
-		}
-		emoji := tui.CategoryEmoji[cat]
-
-		note := stalenessNote(a.staleness, caps)
-		fmt.Fprintln(os.Stdout, tui.CategoryLine(label, emoji, a.total, maxBytes, a.count, note, caps))
-
-		if a.staleness == scan.StalenessStale || a.staleness == scan.StalenessUnused {
-			safeBytes += a.total
-		}
-	}
-
-	if dockerResult != nil && dockerTotal > 0 {
-		dockerNote := dockerUnusedNote(dockerResult, caps)
-		fmt.Fprintln(os.Stdout, tui.CategoryLine("Docker", "🐳", dockerTotal, maxBytes,
-			dockerResult.UnusedImageCount+dockerResult.UsedImageCount+dockerResult.VolumeCount,
-			dockerNote, caps))
 		safeBytes += dockerResult.UnusedImageBytes
 	}
 
-	if safeBytes > 0 {
-		fmt.Fprintln(os.Stdout, tui.SafeToCleanLine(safeBytes, caps))
+	const maxDisplay = 20
+	display := sorted
+	extra := 0
+	if len(sorted) > maxDisplay {
+		extra = len(sorted) - maxDisplay
+		display = sorted[:maxDisplay]
 	}
-	fmt.Fprintln(os.Stdout, "  Run: diskwhy clean  to begin")
+
+	for _, item := range display {
+		label := tui.CategoryLabel[item.Category]
+		if label == "" {
+			label = item.Category
+		}
+		fmt.Fprintln(os.Stdout, tui.ItemLine(label, item.Path, item.SizeBytes, maxBytes, item.StalenessScore, "", caps))
+	}
+
+	if extra > 0 {
+		fmt.Fprintf(os.Stdout, "\n  ... and %d more\n", extra)
+	}
+
+	if dockerResult != nil && dockerTotal > 0 {
+		staleness := scan.StalenessActive
+		if dockerResult.UnusedImageCount > 0 {
+			staleness = scan.StalenessUnused
+		}
+		fmt.Fprintln(os.Stdout, tui.ItemLine("docker", "images & volumes", dockerTotal, maxBytes, staleness, dockerUnusedNote(dockerResult), caps))
+	}
+
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, tui.ScanSummary(totalFound, safeBytes, caps))
 
 	if result.SkippedCount > 0 {
 		fmt.Fprintf(os.Stderr, "\n  %d path(s) skipped — run with sudo to include system directories\n",
@@ -221,43 +208,10 @@ func printScanResult(
 	}
 }
 
-// dockerUnusedNote returns a display note summarising unused Docker images.
-func dockerUnusedNote(d *docker.Result, caps tui.Caps) string {
+func dockerUnusedNote(d *docker.Result) string {
 	if d.UnusedImageCount == 0 {
-		ok := "[OK]"
-		if caps.Emoji {
-			ok = "✅"
-		}
-		return ok + " All images in use"
-	}
-	warn := "[!]"
-	if caps.Emoji {
-		warn = "🟡"
+		return "all images in use"
 	}
 	gb := float64(d.UnusedImageBytes) / (1 << 30)
-	return fmt.Sprintf("%s %d unused image(s) (%.1f GB) — safe to remove", warn, d.UnusedImageCount, gb)
-}
-
-// stalenessNote returns a short display note for a staleness level.
-func stalenessNote(s scan.StalenessLevel, caps tui.Caps) string {
-	ok := "[OK]"
-	warn := "[!]"
-	danger := "[X]"
-	if caps.Emoji {
-		ok = "✅"
-		warn = "🟡"
-		danger = "🔴"
-	}
-	switch s {
-	case scan.StalenessActive:
-		return ok + " Active"
-	case scan.StalenessRecent:
-		return warn + " Recent"
-	case scan.StalenessStale:
-		return warn + " Stale — safe to review"
-	case scan.StalenessUnused:
-		return danger + " Unused — safe to delete"
-	default:
-		return "? Unknown"
-	}
+	return fmt.Sprintf("%d unused (%.1f GB)", d.UnusedImageCount, gb)
 }
