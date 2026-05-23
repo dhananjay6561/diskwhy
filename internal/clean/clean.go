@@ -2,6 +2,7 @@ package clean
 
 import (
 	"context"
+	"errors"
 
 	"github.com/dhananjay6561/diskwhy/internal/scan"
 )
@@ -16,8 +17,7 @@ type Config struct {
 }
 
 // Run processes items one at a time, respecting context cancellation between
-// each item so a SIGTERM can interrupt mid-run without partial deletions.
-// Items whose category is not in cfg.Categories are silently skipped.
+// each item. Items whose category is not in cfg.Categories are silently skipped.
 func Run(ctx context.Context, cfg Config, items []scan.CandidateItem) []ItemResult {
 	allowed := make(map[string]bool, len(cfg.Categories))
 	for _, c := range cfg.Categories {
@@ -56,22 +56,32 @@ func handleGitGC(ctx context.Context, item scan.CandidateItem, cfg Config) ItemR
 	if secs <= 0 {
 		secs = 30
 	}
-	err := runGitGC(ctx, item.Path, secs)
+	freed, err := runGitGC(ctx, item.Path, secs)
 	if err != nil {
 		return ItemResult{Path: item.Path, Category: item.Category, Outcome: OutcomeError, Err: err}
 	}
-	return ItemResult{Path: item.Path, Category: item.Category, Outcome: OutcomeGCRun}
+	return ItemResult{Path: item.Path, Category: item.Category, Outcome: OutcomeGCRun, BytesDelta: freed}
 }
 
-func handleFileItem(_ context.Context, item scan.CandidateItem, cfg Config) ItemResult {
+func handleFileItem(ctx context.Context, item scan.CandidateItem, cfg Config) ItemResult {
 	if cfg.DryRun {
 		return ItemResult{Path: item.Path, Category: item.Category, Outcome: OutcomeDryRun, BytesDelta: item.SizeBytes}
 	}
 	if !isSafeToDelete(item, cfg.Home) {
 		return ItemResult{Path: item.Path, Category: item.Category, Outcome: OutcomeSkipped}
 	}
-	err := safeRemove(item.Path, cfg.UseTrash)
+	removed, total, err := safeRemove(ctx, item.Path, cfg.UseTrash)
 	if err != nil {
+		if errors.Is(err, ErrCancelled) {
+			return ItemResult{
+				Path:         item.Path,
+				Category:     item.Category,
+				Outcome:      OutcomePartial,
+				FilesRemoved: removed,
+				FilesTotal:   total,
+				Err:          err,
+			}
+		}
 		return ItemResult{Path: item.Path, Category: item.Category, Outcome: OutcomeError, Err: err}
 	}
 	outcome := OutcomeDeleted

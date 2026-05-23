@@ -1,6 +1,7 @@
 package clean
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -156,7 +157,7 @@ func TestSafeRemove_PermanentDelete(t *testing.T) {
 	path := f.Name()
 	f.Close()
 
-	if err := safeRemove(path, false); err != nil {
+	if _, _, err := safeRemove(context.Background(), path, false); err != nil {
 		t.Fatalf("safeRemove: %v", err)
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
@@ -173,7 +174,7 @@ func TestSafeRemove_Directory(t *testing.T) {
 	nested, _ := os.CreateTemp(sub, "*.bin")
 	nested.Close()
 
-	if err := safeRemove(sub, false); err != nil {
+	if _, _, err := safeRemove(context.Background(), sub, false); err != nil {
 		t.Fatalf("safeRemove directory: %v", err)
 	}
 	if _, err := os.Lstat(sub); !os.IsNotExist(err) {
