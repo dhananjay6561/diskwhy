@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg:      #080808;
+  --color-panel:   #0f0f0f;
+  --color-panel2:  #141414;
+  --color-panel3:  #1a1a1a;
+  --color-line:    #1e1e1e;
+  --color-line2:   #2a2a2a;
+  --color-line3:   #383838;
+  --color-ink:     #e2e2e2;
+  --color-ink2:    #777777;
+  --color-ink3:    #383838;
+  --color-brand:   #22c55e;
+  --color-amber:   #f59e0b;
+  --color-sky:     #60a5fa;
+  --color-rose:    #f87171;
+  --color-violet:  #a78bfa;
+  --color-mint:    #6ee7b7;
+  --font-sans:     system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:     ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: #080808;
+  color: #e2e2e2;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* terminal color tokens — used inside dangerouslySetInnerHTML */
+.tp   { color: #383838; }
+.tc   { color: #22c55e; }
+.tf   { color: #93c5fd; }
+.th   { color: #ffffff; }
+.ts   { color: #383838; }
+.tz   { color: #383838; }
+.tsi  { color: #777777; }
+.tcat { color: #60a5fa; }
+.tsz  { color: #f59e0b; }
+.tu   { color: #f87171; }
+.tst  { color: #f59e0b; }
+.tr   { color: #6ee7b7; }
+.ta   { color: #22c55e; }
+.tok  { color: #22c55e; }
+.tsk  { color: #383838; }
+.tgc  { color: #a78bfa; }
+.dollar { color: #383838; }
+
+/* json tokens */
+.jk { color: #93c5fd; }
+.jv { color: #86efac; }
+.jn { color: #f59e0b; }
+.jb { color: #777777; }
+.jp { color: #777777; }
+
+/* completion shell tokens */
+.cmd { color: #22c55e; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor { animation: blink 1s step-end infinite; color: #22c55e; }
