@@ -315,84 +315,144 @@ func (m AppModel) View() string {
 // ── home view ─────────────────────────────────────────────────────────────────
 
 func (m AppModel) renderHome() string {
-	const sepW = 52
-	sep := strings.Repeat("─", sepW)
+	termW := m.width
+	if termW < 4 {
+		termW = 80
+	}
+	boxW := termW - 2
+	if boxW > 118 {
+		boxW = 118
+	}
+	if boxW < 58 {
+		boxW = 58
+	}
+
+	leftInner := 26
+	rightInner := boxW - 2 - leftInner - 3 // 2 for outer borders, 3 for " │ "
+	if rightInner < 28 {
+		rightInner = 28
+	}
+
+	versionStr := ""
+	if m.version != "" {
+		versionStr = " v" + m.version
+	}
+	username := homeUsername()
+	homePath := homeShortPath(leftInner - 4)
+	choices := homeChoices()
 
 	if !m.caps.Color {
+		// plain fallback
 		var s strings.Builder
-		s.WriteString("\n  diskwhy")
-		if m.version != "" {
-			s.WriteString("  v" + m.version)
+		title := "diskwhy" + versionStr
+		topFill := boxW - 2 - len(title) - 2
+		if topFill < 0 {
+			topFill = 0
 		}
-		s.WriteString("\n  your disk is full. but why?\n\n")
-		s.WriteString("  " + strings.Repeat("-", sepW) + "\n\n")
-		choices := homeChoices()
-		for i, c := range choices {
-			if m.cursor == i {
-				s.WriteString(fmt.Sprintf("  ► %s.  %-14s %s\n", c[0], c[1], c[2]))
-			} else {
-				s.WriteString(fmt.Sprintf("     %s.  %-14s %s\n", c[0], c[1], c[2]))
-			}
+		s.WriteString("╭─ " + title + " " + strings.Repeat("─", topFill) + "╮\n")
+		rows := buildHomePlainRows(m, leftInner, rightInner, username, homePath, choices)
+		for _, r := range rows {
+			l := plainPad(r[0], leftInner)
+			ri := plainPad(r[1], rightInner)
+			s.WriteString("│ " + l + " │ " + ri + " │\n")
 		}
-		if m.scanErr != "" {
-			s.WriteString("\n  error: " + m.scanErr + "\n")
-		}
-		s.WriteString("\n  " + strings.Repeat("-", sepW) + "\n")
-		s.WriteString("  ↑↓ Navigate    Enter Select    Q Quit\n")
-		return s.String()
+		s.WriteString("╰" + strings.Repeat("─", leftInner+2) + "┴" + strings.Repeat("─", rightInner+2) + "╯\n")
+		return "\n" + s.String()
 	}
 
-	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
-	numC := lipgloss.NewStyle().Foreground(lipgloss.Color("#60a5fa"))
-	activeLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("#f1f5f9")).Bold(true)
-	activeDesc := lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8"))
-	inactiveLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
-	inactiveDesc := lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
+	// Colors
+	borderC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
+	titleC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	dimC := lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	brandC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
+	headerC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
 	cursorC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
-	hintKey := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e2e2"))
-	rose := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+	numC := lipgloss.NewStyle().Foreground(lipgloss.Color("#60a5fa"))
+	activeLabelC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f1f5f9")).Bold(true)
+	activeDescC := lipgloss.NewStyle().Foreground(lipgloss.Color("#94a3b8"))
+	inactiveLabelC := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	inactiveDescC := lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
+	mascotC := lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
+	roseC := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+	hintKeyC := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e2e2"))
 
-	dimSep := dim.Render("  " + sep)
-
-	var s strings.Builder
-	s.WriteString("\n")
-	s.WriteString("  " + brand.Render("disk") + "why")
-	if m.version != "" {
-		s.WriteString("  " + dim.Render("v"+m.version))
+	// Left column lines
+	left := []string{
+		"",
+		mascotC.Render("   ┌──────────┐"),
+		mascotC.Render("   │ ◉  ────  │"),
+		mascotC.Render("   │    ────  │"),
+		mascotC.Render("   │    ────  │"),
+		mascotC.Render("   └──────────┘"),
+		"",
+		"   Welcome back, " + brandC.Render(username) + "!",
+		dimC.Render("   your disk is full."),
+		dimC.Render("   but why?"),
+		"",
+		dimC.Render("   diskwhy" + versionStr),
+		dimC.Render("   " + homePath),
+		"",
 	}
-	s.WriteString("\n  " + dim.Render("your disk is full. but why?") + "\n")
-	s.WriteString("\n" + dimSep + "\n\n")
 
-	choices := homeChoices()
+	// Right column lines
+	right := []string{
+		"",
+		headerC.Render("  Quick start"),
+		dimC.Render("  Select an option to get started."),
+		"",
+	}
 	for i, c := range choices {
+		var row string
 		if m.cursor == i {
-			s.WriteString(cursorC.Render("  ► "))
-			s.WriteString(numC.Render(c[0] + ".  "))
-			s.WriteString(activeLabel.Render(fmt.Sprintf("%-14s", c[1])))
-			s.WriteString(activeDesc.Render(c[2]))
+			row = "  " + cursorC.Render("► ") + numC.Render(c[0]+"  ") +
+				activeLabelC.Render(plainPad(c[1], 14)) + activeDescC.Render(c[2])
 		} else {
-			s.WriteString(dim.Render("     "+c[0]+".  "))
-			s.WriteString(inactiveLabel.Render(fmt.Sprintf("%-14s", c[1])))
-			s.WriteString(inactiveDesc.Render(c[2]))
+			row = "  " + dimC.Render("  "+c[0]+"  ") +
+				inactiveLabelC.Render(plainPad(c[1], 14)) + inactiveDescC.Render(c[2])
 		}
-		s.WriteString("\n")
+		right = append(right, row)
 	}
-
 	if m.scanErr != "" {
-		s.WriteString("\n  " + rose.Render("error: "+m.scanErr) + "\n")
+		right = append(right, "", roseC.Render("  error: "+m.scanErr))
+	}
+	right = append(right,
+		"",
+		headerC.Render("  Navigation"),
+		"  "+hintKeyC.Render("↑ ↓")+" "+dimC.Render("Move")+
+			dimC.Render("    ")+hintKeyC.Render("Enter / 1–4")+" "+dimC.Render("Select")+
+			dimC.Render("    ")+hintKeyC.Render("Q")+" "+dimC.Render("Quit"),
+		"",
+	)
+
+	// Equalize heights
+	for len(left) < len(right) {
+		left = append(left, "")
+	}
+	for len(right) < len(left) {
+		right = append(right, "")
 	}
 
-	s.WriteString("\n" + dimSep + "\n")
-	s.WriteString("  " +
-		hintKey.Render("↑ ↓") + dim.Render(" Navigate") +
-		dim.Render("  |  ") +
-		hintKey.Render("Enter") + dim.Render(" Select") +
-		dim.Render("  |  ") +
-		hintKey.Render("Q") + dim.Render(" Quit") +
-		"\n")
+	// Build title bar
+	titleText := " diskwhy" + versionStr + " "
+	topFill := boxW - 2 - len(titleText) - 2
+	if topFill < 0 {
+		topFill = 0
+	}
+	topBar := borderC.Render("╭─") + titleC.Render(titleText) + borderC.Render(strings.Repeat("─", topFill)+"╮")
+	botBar := borderC.Render("╰" + strings.Repeat("─", leftInner+2) + "┴" + strings.Repeat("─", rightInner+2) + "╯")
 
-	return s.String()
+	bord := borderC.Render("│")
+	div := borderC.Render("│")
+
+	var sb strings.Builder
+	sb.WriteString("\n" + topBar + "\n")
+	for i := range left {
+		l := ansiPad(left[i], leftInner)
+		r := ansiPad(right[i], rightInner)
+		sb.WriteString(bord + " " + l + " " + div + " " + r + " " + bord + "\n")
+	}
+	sb.WriteString(botBar + "\n")
+	return sb.String()
 }
 
 func homeChoices() [][3]string {
@@ -402,6 +462,94 @@ func homeChoices() [][3]string {
 		{"3", "Clean", "Remove found junk safely"},
 		{"4", "Quit", "Exit diskwhy"},
 	}
+}
+
+func buildHomePlainRows(m AppModel, leftW, rightW int, username, homePath string, choices [][3]string) [][2]string {
+	versionStr := ""
+	if m.version != "" {
+		versionStr = " v" + m.version
+	}
+	left := []string{
+		"",
+		"   ┌──────────┐",
+		"   │ ◉  ────  │",
+		"   │    ────  │",
+		"   │    ────  │",
+		"   └──────────┘",
+		"",
+		"   Welcome back, " + username + "!",
+		"   your disk is full.",
+		"   but why?",
+		"",
+		"   diskwhy" + versionStr,
+		"   " + homePath,
+		"",
+	}
+	right := []string{"", "  Quick start", "  Select an option to get started.", ""}
+	for i, c := range choices {
+		pfx := "    "
+		if m.cursor == i {
+			pfx = "  ► "
+		}
+		right = append(right, pfx+c[0]+"  "+plainPad(c[1], 14)+c[2])
+	}
+	right = append(right, "", "  Navigation", "  ↑↓ Move    Enter/1-4 Select    Q Quit", "")
+	for len(left) < len(right) {
+		left = append(left, "")
+	}
+	for len(right) < len(left) {
+		right = append(right, "")
+	}
+	rows := make([][2]string, len(left))
+	for i := range left {
+		rows[i] = [2]string{left[i], right[i]}
+	}
+	return rows
+}
+
+// ansiPad pads s to visible width w, accounting for ANSI escape codes.
+func ansiPad(s string, w int) string {
+	vis := lipgloss.Width(s)
+	if vis >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-vis)
+}
+
+// plainPad pads a plain (no ANSI) string to width w.
+func plainPad(s string, w int) string {
+	if len(s) >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-len(s))
+}
+
+func homeUsername() string {
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	if u := os.Getenv("USERNAME"); u != "" {
+		return u
+	}
+	return "there"
+}
+
+func homeShortPath(maxLen int) string {
+	home, _ := os.UserHomeDir()
+	if len(home) <= maxLen {
+		return home
+	}
+	parts := strings.Split(home, "/")
+	if len(parts) > 0 {
+		short := "~/" + parts[len(parts)-1]
+		if len(short) <= maxLen {
+			return short
+		}
+	}
+	if len(home) > maxLen {
+		return "..." + home[len(home)-(maxLen-3):]
+	}
+	return home
 }
 
 // ── scanning view ─────────────────────────────────────────────────────────────
